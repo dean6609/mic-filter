@@ -7,6 +7,10 @@
 - Maximum attenuation is limited to -20 dB: a small amount of the original signal is always kept, so word tails and room tone no longer drop into digital silence.
 - Reported latency corrected from 20 ms to 30 ms.
 - Tests now verify the dry path against the model's measured delay and check that the gate closes without clicks.
+- Replaced the bundled Windows SDK headers with project-written APO declarations (`src/apo_sdk.h`); the repository no longer redistributes Microsoft headers.
+- Removed development-only leftovers: the diagnostic APO variant and its `diagnostic.bin` mapping. `MicFilter.exe --check-com` now probes the installed class.
+- The APO payload is now `MicFilterAPO.dll`; upgrades remove the old `MicFilterAPO-v4.dll` copy.
+- Removed the unused RNNoise "little" model source (29 MB).
 
 ## 0.4.0 — 2026-09-30
 

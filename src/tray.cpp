@@ -40,10 +40,9 @@ void checkCom(){
         ULONG STDMETHODCALLTYPE AddRef() override{return ++references_;}
         ULONG STDMETHODCALLTYPE Release() override{return --references_;}
     } outer;
-    constexpr GUID diagnosticClsid={0x4a1f2290,0xfe8c,0x4f3a,{0x98,0x55,0xee,0xb7,0xbc,0x03,0x81,0x71}};
     IUnknown* object=nullptr;
-    const auto normal=CoCreateInstance(diagnosticClsid,nullptr,CLSCTX_INPROC_SERVER,__uuidof(IUnknown),reinterpret_cast<void**>(&object));if(object)object->Release();object=nullptr;
-    const auto aggregate=CoCreateInstance(diagnosticClsid,&outer,CLSCTX_INPROC_SERVER,__uuidof(IUnknown),reinterpret_cast<void**>(&object));
+    const auto normal=CoCreateInstance(micfilter::kClsid,nullptr,CLSCTX_INPROC_SERVER,__uuidof(IUnknown),reinterpret_cast<void**>(&object));if(object)object->Release();object=nullptr;
+    const auto aggregate=CoCreateInstance(micfilter::kClsid,&outer,CLSCTX_INPROC_SERVER,__uuidof(IUnknown),reinterpret_cast<void**>(&object));
     std::wostringstream report;report<<L"Windows COM normal HRESULT=0x"<<std::hex<<static_cast<unsigned long>(normal)<<L"\nWindows COM aggregate HRESULT=0x"<<static_cast<unsigned long>(aggregate)<<L"\n";
     if(object){IAudioProcessingObject* apo=nullptr;const auto queried=object->QueryInterface(__uuidof(IAudioProcessingObject),reinterpret_cast<void**>(&apo));report<<L"Windows COM APO interface HRESULT=0x"<<static_cast<unsigned long>(queried)<<L"\n";if(apo)apo->Release();object->Release();}
     printUtf8(report.str());
