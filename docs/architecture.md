@@ -17,6 +17,10 @@ The tray is a controller. Windows loads the DLL in its audio host when a capture
 
 The engine supports the Windows float32 processing format, 1–8 channels and 8–192 kHz. RNNoise always receives 480-sample frames at 48 kHz. Windows callback sizes can vary. Resamplers, network state, queues and scratch buffers are initialized before processing; the callback uses fixed storage and interlocked telemetry.
 
+## Processing details
+
+RNNoise output is 20 ms behind its input (overlap/add plus one delayed frame); with the 10 ms frame buffer the filtered path is 1440 samples late at 48 kHz. The original (dry) signal uses the same delay so partial mixes do not comb-filter. The optional voice gate fades in over 5 ms and out over 50 ms. A fixed -20 dB share of the original signal (`kFloorGain` in `src/dsp.h`) limits maximum attenuation so word tails never drop into digital silence. Reported APO latency is 30 ms plus any resampler delay.
+
 ## Installation and upgrades
 
 The installer embeds the application, APO, scripts, quick-start instructions and licenses. It enumerates only `DEVICE_STATE_ACTIVE` capture endpoints, selects the only input automatically or asks for a number, checks the format, elevates, extracts into a protected temporary folder and starts the installation transaction.
@@ -56,6 +60,7 @@ The producer ID and recent monotonic tick distinguish current callbacks from old
 - Werman v1.21: `4b0a6f76fc8bcfb5a3603ae2cb6619dfcb0e19f2`.
 - Bundled RNNoise: `70f1d256acd4b34a572f999a05c87bf00b67730d`.
 - SpeexDSP 1.2.1: `1b28a0f61bc31162979e1f26f3981fc3637095c8`, standalone float resampler with `RANDOM_PREFIX=micfilter`.
-- Microsoft APO declarations come from win32metadata, with their original notices retained.
+- APO interface declarations are written for this project in `src/apo_sdk.h` from Microsoft's public API reference; no Windows SDK headers are redistributed. Compile-time checks pin the struct layouts.
+- `vendor/rnnoise` is the upstream RNNoise tree at the revision above. The unused alternative model `rnnoise_data_little.c` is omitted.
 
 The network and weights are unchanged. No personal training or automatic model download is implemented. Engine updates should pin a reviewed revision and repeat equivalence, streaming and physical voice checks.

@@ -9,7 +9,7 @@ $rn=Join-Path $root 'vendor\rnnoise'
 $output=if($OutputDirectory){[IO.Path]::GetFullPath($OutputDirectory)}else{Join-Path $root 'dist'}
 $objects=Join-Path $root 'build'
 New-Item -ItemType Directory -Path $output,$objects -Force | Out-Null
-$common=@('-O2','-DNDEBUG','-DUNICODE','-D_UNICODE','-D_WIN32_WINNT=0x0A00','-fms-extensions','-D__REQUIRED_RPCNDR_H_VERSION__=475',('-I'+(Join-Path $root 'vendor\sdk')),('-I'+(Join-Path $rn 'include')),('-I'+(Join-Path $root 'src')))
+$common=@('-O2','-DNDEBUG','-DUNICODE','-D_UNICODE','-D_WIN32_WINNT=0x0A00','-fms-extensions',('-I'+(Join-Path $rn 'include')),('-I'+(Join-Path $root 'src')))
 $rnSources=@('celt_lpc','denoise','kiss_fft','nnet','nnet_default','parse_lpcnet_weights','pitch','rnn','rnnoise_tables','rnnoise_data')
 $rnObjects=@()
 $resampler=Join-Path $root 'vendor\speex-resampler'
