@@ -76,7 +76,7 @@ try {
     } else {
         $step='Check files and effect chain'
         $sourceRoot=(Resolve-Path -LiteralPath $SourceDir).Path
-        foreach($name in @('MicFilter.exe','MicFilterAPO-v4.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){if(-not(Test-Path -LiteralPath (Join-Path $sourceRoot $name))){throw ('Missing '+$name)}}
+        foreach($name in @('MicFilter.exe','MicFilterAPO.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){if(-not(Test-Path -LiteralPath (Join-Path $sourceRoot $name))){throw ('Missing '+$name)}}
         $previousValue=$effectsKey.GetValue($slot)
         if($previousValue -and $previousValue -ne $knownClownfish -and $previousValue -ne $ownClsid -and $legacyClsids -notcontains $previousValue){throw 'This microphone has another effect in this chain position. It is preserved rather than replaced.'}
         foreach($otherSlot in @(1,5,6,7)){
@@ -93,11 +93,13 @@ try {
             $backup | ConvertTo-Json | Set-Content -LiteralPath $backupPath -Encoding UTF8
         }
         $step='Copy application files'
-        foreach($name in @('MicFilter.exe','MicFilterAPO-v4.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){
+        foreach($name in @('MicFilter.exe','MicFilterAPO.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){
             $sourceFile=Join-Path $sourceRoot $name;$destination=Join-Path $programDir $name
             if($sourceFile -ne $destination -and ((-not(Test-Path -LiteralPath $destination)) -or (Get-FileHash -LiteralPath $sourceFile).Hash -ne (Get-FileHash -LiteralPath $destination).Hash)){Copy-Item -LiteralPath $sourceFile -Destination $destination -Force}
         }
-        $dllSource=Join-Path $sourceRoot 'MicFilterAPO-v4.dll'
+        # Payload name used before 0.5; the registered DLL is always the hashed copy below.
+        $legacyPayload=Join-Path $programDir 'MicFilterAPO-v4.dll';if(Test-Path -LiteralPath $legacyPayload){Remove-Item -LiteralPath $legacyPayload -Force -ErrorAction SilentlyContinue}
+        $dllSource=Join-Path $sourceRoot 'MicFilterAPO.dll'
         $dllHash=(Get-FileHash -LiteralPath $dllSource -Algorithm SHA256).Hash.ToLowerInvariant()
         $dllDestination=Join-Path $programDir ('MicFilterAPO-'+$dllHash.Substring(0,16)+'.dll')
         if(-not(Test-Path -LiteralPath $dllDestination)){Copy-Item -LiteralPath $dllSource -Destination $dllDestination}

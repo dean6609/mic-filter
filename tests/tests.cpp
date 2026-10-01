@@ -36,6 +36,24 @@ public:
 };
 std::vector<float> signal(unsigned frames,unsigned channels){std::vector<float> samples(frames*channels);uint32_t rng=12345;for(unsigned f=0;f<frames;++f)for(unsigned c=0;c<channels;++c){rng=rng*1664525u+1013904223u;const float noise=((rng>>8)/16777216.0f-0.5f)*0.03f;samples[f*channels+c]=0.15f*std::sin(6.2831853f*(130.0f+c*40)*f/48000)+noise;}return samples;}
 std::vector<float> run(const std::vector<float>& input,unsigned channels,const std::vector<unsigned>& sizes,micfilter::Settings settings){micfilter::Processor processor;require(processor.initialize(channels),"processor init");std::vector<float> out(input.size());unsigned done=0,index=0,frames=input.size()/channels;while(done<frames){const unsigned n=std::min(sizes[index++%sizes.size()],frames-done);processor.process(input.data()+done*channels,out.data()+done*channels,n,false,settings);done+=n;}return out;}
+// Find the delay of the model's own output with a broadband, non-periodic voiced sweep.
+// A dry path at any other delay would comb-filter the mix.
+void alignmentTest(){
+    const unsigned frames=96000;std::vector<float> sweep(frames);double phase=0;
+    for(unsigned n=0;n<frames;++n){const double t=n/48000.0;phase+=6.28318530718*(90+60*t+25*std::sin(6.28318530718*5.5*t))/48000;double s=0;for(int h=1;h<25;++h)s+=std::sin(h*phase+h*h)/h;sweep[n]=static_cast<float>(0.08*s);}
+    const auto wet=run(sweep,1,{480},{true,0,20,1});
+    unsigned best=0;double bestCorrelation=-1;
+    for(unsigned lag=0;lag<2400;++lag){double c=0,a=0,b=0;for(unsigned n=24000;n<72000;++n){c+=sweep[n]*wet[n+lag];a+=sweep[n]*sweep[n];b+=wet[n+lag]*wet[n+lag];}c/=std::sqrt(a*b+1e-30);if(c>bestCorrelation){bestCorrelation=c;best=lag;}}
+    require(best>=1438&&best<=1442&&bestCorrelation>0.7,"filtered output delay is not the 1440-sample delay used for the original signal");
+}
+// After voice stops the gate must fade, never jump to zero at a block boundary.
+void gateTest(){
+    std::vector<float> tone(48000,0);
+    for(unsigned n=0;n<24000;++n)tone[n]=0.2f*std::sin(6.2831853f*150*n/48000);
+    const auto out=run(tone,1,{480},{true,0.99f,0,1});
+    float worst=0;for(unsigned n=26000;n<47999;++n)worst=std::max(worst,std::abs(out[n+1]-out[n]));
+    require(worst<0.02f,"gate closes with a click");
+}
 void dspTests(){
     auto input=signal(48000,2);micfilter::Settings active{true,0,20,1};
     auto one=run(input,2,{480},active),irregular=run(input,2,{1,200,512,37,960},active);
@@ -43,8 +61,6 @@ void dspTests(){
     require(run(input,2,{200,512},{false,0.85f,20,1})==input,"bypass is not bit-exact");
     require(run(input,2,{200,512},{true,0.85f,20,0})==input,"100% dry bypass is not bit-exact");
     for(float x:one)require(std::isfinite(x),"nonfinite output");
-    const auto mixed=run(input,2,{200,512},{true,0,20,0.85f});
-    for(unsigned f=0;f<48000;++f)for(unsigned c=0;c<2;++c){const float original=f>=960?input[(f-960)*2+c]:0;require(std::abs(mixed[f*2+c]-(one[f*2+c]*0.85f+original*0.15f))<1e-7f,"dry/wet timing is misaligned");}
     std::vector<float> reference(input.size(),0);std::array<DenoiseState*,2> rn{rnnoise_create(nullptr),rnnoise_create(nullptr)};
     for(auto* p:rn)require(p!=nullptr,"reference model init");
     std::array<float,480> in{},out{};
@@ -54,10 +70,17 @@ void dspTests(){
         if(offset+480<48000)for(unsigned f=0;f<480;++f)reference[(offset+480+f)*2+c]=out[f]/32767;
     }
     for(auto* p:rn)rnnoise_destroy(p);
-    require(one==reference,"processor differs from direct v1.21 RNNoise");
+    // The original signal must use the model's real delay: 10 ms buffering plus 20 ms inside RNNoise.
+    constexpr unsigned delay=1440;const float f=micfilter::kFloorGain;
+    auto original=[&](unsigned frame,unsigned c){return frame>=delay?input[(frame-delay)*2+c]:0.0f;};
+    for(unsigned n=0;n<48000;++n)for(unsigned c=0;c<2;++c)require(std::abs(one[n*2+c]-(reference[n*2+c]*(1-f)+original(n,c)*f))<1e-6f,"processor differs from direct v1.21 RNNoise plus -20 dB floor");
+    const auto mixed=run(input,2,{200,512},{true,0,20,0.85f});
+    for(unsigned n=0;n<48000;++n)for(unsigned c=0;c<2;++c){const float expected=(reference[n*2+c]*0.85f+original(n,c)*0.15f)*(1-f)+original(n,c)*f;require(std::abs(mixed[n*2+c]-expected)<1e-6f,"dry/wet mix differs from expected");}
+    alignmentTest();
+    gateTest();
     micfilter::Processor inPlace;require(inPlace.initialize(2),"inplace init");auto same=input;inPlace.process(same.data(),same.data(),48000,false,active);require(same==one,"in-place processing corrupts input");
     micfilter::Processor silence;require(silence.initialize(1),"silent init");std::vector<float> zeros(512,1);silence.process(nullptr,zeros.data(),512,true,{false,0,20,1});for(float x:zeros)require(x==0,"silent bypass failed");
-    std::cout<<"PASS DSP: bit-exact bypass, direct model equivalence, callback sizes 1/37/200/480/512/960, stereo, in-place, silence, aligned dry/wet mix\n";
+    std::cout<<"PASS DSP: bit-exact bypass, direct model equivalence, callback sizes 1/37/200/480/512/960, stereo, in-place, silence, dry/wet aligned to measured 30 ms model delay, faded gate, -20 dB floor\n";
     auto performanceInput=signal(48000*10,2);auto begin=std::chrono::steady_clock::now();run(performanceInput,2,{480},active);double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
     std::cout<<"BENCHMARK: 10 seconds stereo processed in "<<seconds<<" seconds; real-time factor "<<seconds/10<<" (CPU synthetic workload, not microphone latency)\n";
 }

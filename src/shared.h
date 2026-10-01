@@ -7,13 +7,8 @@
 #include <string>
 
 namespace micfilter {
-#ifdef MICFILTER_DIAGNOSTIC_CLSID
-inline constexpr wchar_t kClsidText[] = L"{4A1F2290-FE8C-4F3A-9855-EEB7BC038171}";
-inline constexpr GUID kClsid = {0x4a1f2290,0xfe8c,0x4f3a,{0x98,0x55,0xee,0xb7,0xbc,0x03,0x81,0x71}};
-#else
 inline constexpr wchar_t kClsidText[] = L"{CDB2B27A-3B40-4B79-95AA-123C7136D873}";
 inline constexpr GUID kClsid = {0xcdb2b27a,0x3b40,0x4b79,{0x95,0xaa,0x12,0x3c,0x71,0x36,0xd8,0x73}};
-#endif
 inline constexpr LONG kMagic = 0x5741564f;
 inline constexpr LONG kStateVersion = 1;
 inline constexpr wchar_t kWindowClass[] = L"MicFilter.Native.Tray.v1";

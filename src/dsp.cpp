@@ -24,8 +24,8 @@ bool Processor::initialize(unsigned channels) {
     return true;
 }
 void Processor::reset() noexcept {
-    position_=0; graceLeft_=0; previouslyEnabled_=false;
-    input_={}; dryPrevious_={}; output_={};
+    position_=0; graceLeft_=0; gate_=1.0f; previouslyEnabled_=false;
+    input_={}; dryPrevious_={}; dryOlder_={}; output_={};
     for(unsigned c=0;c<channels_;++c) if(states_[c]) rnnoise_init(states_[c],nullptr);
 }
 void Processor::block(const Settings& settings) noexcept {
@@ -35,14 +35,20 @@ void Processor::block(const Settings& settings) noexcept {
     bool voice=probability>=settings.threshold;
     if(voice) graceLeft_=std::max(settings.grace,20u); // v1.21 has this same 200 ms minimum.
     else if(graceLeft_>0) { voice=true; --graceLeft_; }
-    for(unsigned c=0;c<channels_;++c) {
-        for(unsigned i=0;i<480;++i) {
-            const float wet=voice ? output_[c][i]/32767.0f : 0.0f;
-            // RNNoise's overlap/add has one frame of delay. Match dry to that delay.
-            output_[c][i]=wet*settings.wet + dryPrevious_[c][i]*(1.0f-settings.wet);
-            dryPrevious_[c][i]=input_[c][i]/32767.0f;
+    const float target=voice ? 1.0f : 0.0f;
+    const float step=voice ? kGateOpenStep : kGateCloseStep;
+    for(unsigned i=0;i<480;++i) {
+        // One gate envelope for all channels keeps the stereo image stable.
+        gate_=gate_<target ? std::min(target,gate_+step) : std::max(target,gate_-step);
+        for(unsigned c=0;c<channels_;++c) {
+            const float dry=dryOlder_[c][i];
+            const float mixed=output_[c][i]/32767.0f*gate_*settings.wet + dry*(1.0f-settings.wet);
+            output_[c][i]=mixed*(1.0f-kFloorGain) + dry*kFloorGain;
         }
     }
+    dryOlder_=dryPrevious_;
+    for(unsigned c=0;c<channels_;++c)
+        for(unsigned i=0;i<480;++i) dryPrevious_[c][i]=input_[c][i]/32767.0f;
 }
 void Processor::process(const float* input,float* output,unsigned frames,bool silent,const Settings& settings) noexcept {
     if(!channels_ || !output) return;
