@@ -1,5 +1,5 @@
 ﻿# Shared constants and helpers, dot-sourced by install.ps1 and setup-install.ps1.
-$micFilterVersion='0.5.2'
+$micFilterVersion='0.5.3'
 $ownClsid='{CDB2B27A-3B40-4B79-95AA-123C7136D873}'
 # CLSIDs registered by builds released as WavoFilter. Updates and uninstall remove them once unused.
 $legacyClsids=@('{54F530A1-D045-4C70-8999-11CF13E0DDAF}','{6C78EB4F-8AE4-4461-BE4A-989C7C14C7B2}')

@@ -18,10 +18,12 @@ constexpr UINT trayMessage=WM_APP+1,refreshMessage=WM_APP+2;
 constexpr UINT idToggle=100,idInstall=101,idRemove=102,idExit=103,idInfo=104,idStartup=105;
 constexpr UINT idReference=110,idGentle=111,idNoGate=112,idWetFull=113,idWetPartial=114;
 constexpr UINT idInstallerLog=115,idUninstall=116;
+constexpr UINT idVoice=120; // idVoice+preset, presets 0..2
 struct Device{std::wstring id,name,guid;};
 std::vector<Device> devices;
 Device selected;
 micfilter::StateMapping mapping;
+micfilter::OptionsMapping options;
 HWND window=nullptr;
 NOTIFYICONDATAW tray{};
 HICON icons[3]{};
@@ -202,26 +204,37 @@ void details(){
     const auto log=latestInstallerLog();if(!log.empty())text+=L"\n\nLatest installation log:\n"+log;
     MessageBoxW(window,text.c_str(),L"MicFilter - diagnostics",MB_OK|MB_ICONINFORMATION);
 }
+void heading(HMENU m,const wchar_t* text){AppendMenuW(m,MF_SEPARATOR,0,nullptr);AppendMenuW(m,MF_STRING|MF_GRAYED,0,text);}
+void choice(HMENU m,bool enabled,bool checked,UINT id,const wchar_t* text){AppendMenuW(m,MF_STRING|(enabled?0:MF_GRAYED)|(checked?MF_CHECKED:0),id,text);}
 void menu(){
-    update();auto* state=mapping.get();HMENU m=CreatePopupMenu();const bool ready=installed()&&state;
+    update();auto* state=mapping.get();if(!options.get())options.open();auto* option=options.get();
+    HMENU m=CreatePopupMenu();const bool ready=installed()&&state;
     AppendMenuW(m,MF_STRING|MF_DISABLED,0,status.c_str());AppendMenuW(m,MF_SEPARATOR,0,nullptr);
     AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED),idToggle,ready&&micfilter::read(state->enabled)?L"Disable filter (original audio)":L"Enable filter");
+    const LONG voice=option?micfilter::read(option->voicePreset):0;
+    heading(m,L"Voice sound");
+    choice(m,ready&&option,voice==0,idVoice+0,L"    Natural (as captured)");
+    choice(m,ready&&option,voice==1,idVoice+1,L"    Clear (brighter, less boomy)");
+    choice(m,ready&&option,voice==2,idVoice+2,L"    Broadcast (polished, even volume)");
+    const LONG threshold=state?micfilter::read(state->thresholdPermille):850;
+    heading(m,L"Silence between words");
+    choice(m,ready,threshold==0,idNoGate,L"    Off: noise removal only (recommended)");
+    choice(m,ready,threshold==600,idGentle,L"    Balanced: silence pauses, 60% voice detection");
+    choice(m,ready,threshold==850,idReference,L"    Strict: silence pauses, 85% voice detection");
+    const LONG wet=state?micfilter::read(state->wetPermille):1000;
+    heading(m,L"Original microphone sound");
+    choice(m,ready,wet==1000,idWetFull,L"    0%: cleanest");
+    choice(m,ready,wet==850,idWetPartial,L"    15%: more natural, some noise returns");
+    AppendMenuW(m,MF_SEPARATOR,0,nullptr);
     AppendMenuW(m,MF_STRING,idInfo,L"Diagnostics");
     AppendMenuW(m,MF_STRING,idInstallerLog,L"View installation log");
-    AppendMenuW(m,MF_SEPARATOR,0,nullptr);
-    const LONG threshold=state?micfilter::read(state->thresholdPermille):850;
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==850?MF_CHECKED:0),idReference,L"Profile: v1.21 reference (85%)");
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==600?MF_CHECKED:0),idGentle,L"Profile: more permissive detection (60%)");
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==0?MF_CHECKED:0),idNoGate,L"Profile: RNNoise without extra gating");
-    const LONG wet=state?micfilter::read(state->wetPermille):1000;
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(wet==1000?MF_CHECKED:0),idWetFull,L"Mix: 100% filtered");
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(wet==850?MF_CHECKED:0),idWetPartial,L"Mix: 85% filtered / 15% original");
     AppendMenuW(m,MF_SEPARATOR,0,nullptr);
     AppendMenuW(m,MF_STRING|(selected.guid.empty()||installerProcess?MF_GRAYED:0),idInstall,L"Install effect on selected microphone...");
     AppendMenuW(m,MF_STRING|(installed()&&!installerProcess?0:MF_GRAYED),idRemove,L"Remove effect and restore configuration...");
     AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idUninstall,L"Uninstall MicFilter...");
-    AppendMenuW(m,MF_STRING|(startupEnabled()?MF_CHECKED:0),idStartup,L"Start with Windows");
-    AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idExit,L"Exit (leave original audio)");
+    // The filter works without the tray app; this only controls the icon.
+    AppendMenuW(m,MF_STRING|(startupEnabled()?MF_CHECKED:0),idStartup,L"Show this icon when Windows starts");
+    AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idExit,L"Exit and disable filter");
     POINT point{};GetCursorPos(&point);SetForegroundWindow(window);const auto command=TrackPopupMenu(m,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);DestroyMenu(m);
     if(command)PostMessageW(window,WM_COMMAND,command,0);PostMessageW(window,WM_NULL,0,0);Shell_NotifyIconW(NIM_SETFOCUS,&tray);
 }
@@ -251,6 +264,7 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
         case idStartup:startup();break;case idReference:if(p)InterlockedExchange(&p->thresholdPermille,850);break;
         case idGentle:if(p)InterlockedExchange(&p->thresholdPermille,600);break;case idNoGate:if(p)InterlockedExchange(&p->thresholdPermille,0);break;
         case idWetFull:if(p)InterlockedExchange(&p->wetPermille,1000);break;case idWetPartial:if(p)InterlockedExchange(&p->wetPermille,850);break;
+        case idVoice+0:case idVoice+1:case idVoice+2:if(auto* o=options.get())InterlockedExchange(&o->voicePreset,static_cast<LONG>(LOWORD(wp)-idVoice));break;
         case idExit:DestroyWindow(hwnd);break;}update();return 0;}
     case WM_CLOSE:if(installerProcess)return 0;DestroyWindow(hwnd);return 0;
     case WM_DESTROY:if(auto* p=mapping.get())InterlockedExchange(&p->enabled,0);Shell_NotifyIconW(NIM_DELETE,&tray);PostQuitMessage(0);return 0;

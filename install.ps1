@@ -174,15 +174,22 @@ try {
             [BitConverter]::GetBytes([int]1000).CopyTo($stateBytes,20)
             [IO.File]::WriteAllBytes($stateFile,$stateBytes)
         }
-        # Only the non-executable control file is writable by interactive users.
-        $stateAcl=[IO.File]::GetAccessControl($stateFile)
-        $usersSid=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
-        $stateRule=[Security.AccessControl.FileSystemAccessRule]::new($usersSid,'Read,Write','Allow')
-        $stateAcl.SetAccessRule($stateRule);[IO.File]::SetAccessControl($stateFile,$stateAcl)
-        $stateAcl=[IO.File]::GetAccessControl($stateFile)
-        $serviceSid=[Security.Principal.SecurityIdentifier]::new('S-1-5-19')
-        $stateAcl.SetAccessRule([Security.AccessControl.FileSystemAccessRule]::new($serviceSid,'Read,Write','Allow'))
-        [IO.File]::SetAccessControl($stateFile,$stateAcl)
+        # Options added after the state.bin ABI was fixed (src/shared.h): magic, version, voice preset.
+        $optionsFile=Join-Path $stateDir 'options.bin'
+        if(-not(Test-Path -LiteralPath $optionsFile)){
+            $optionsBytes=New-Object byte[] 64
+            [BitConverter]::GetBytes([int]0x504f464d).CopyTo($optionsBytes,0)
+            [BitConverter]::GetBytes([int]1).CopyTo($optionsBytes,4)
+            [IO.File]::WriteAllBytes($optionsFile,$optionsBytes)
+        }
+        # Only the non-executable control files are writable by interactive users and the audio service.
+        foreach($controlFile in @($stateFile,$optionsFile)){
+            $acl=[IO.File]::GetAccessControl($controlFile)
+            foreach($sid in @('S-1-5-32-545','S-1-5-19')){
+                $acl.SetAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'Read,Write','Allow'))
+            }
+            [IO.File]::SetAccessControl($controlFile,$acl)
+        }
         $oldDllPath=if(Test-Path -LiteralPath ($classPath+'\InprocServer32')){(Get-Item -LiteralPath ($classPath+'\InprocServer32')).GetValue('')}else{$null}
         try{
             $step='Register effect DLL'

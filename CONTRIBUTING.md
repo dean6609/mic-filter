@@ -21,9 +21,10 @@ Use `-OutputDirectory dist-dev` with `build.ps1`, followed by `package.ps1 -Dist
 | `install.ps1` | `Install`/`Remove` for one microphone (registry association, backup, COM/APO registration, control file) and full `Uninstall`. |
 | `installer-registry.ps1` | Shared version and IDs, minimum registry rights, exact effect-value updates, device restart, delete-or-schedule-at-restart. |
 | `src/tray.cpp` | Tray controls, selected endpoint, diagnostics and command-line control. |
-| `src/shared.h` | Stable 64-byte control/telemetry ABI. |
+| `src/shared.h` | Stable 64-byte control/telemetry ABI (`state.bin`) and the options file (`options.bin`). |
 | `src/apo.cpp` | COM aggregation, APO lifecycle, negotiation and audio callbacks. |
 | `src/dsp.cpp` | Fixed-buffer adapter for unmodified RNNoise inference at 48 kHz, gate fades, dry/wet mix and the -20 dB floor held around speech. |
+| `src/voice.cpp` | Voice presets after noise suppression: EQ, compressor, soft limiter, click-free preset changes. |
 | `src/apo_sdk.h` | Project-written declarations of the public Windows APO interfaces. |
 | `src/rate_processor.cpp` | Streaming conversion to/from 48 kHz, channel handling and bypass. |
 | `src/audio_check.h` | WASAPI capture checks; counters and levels only. |

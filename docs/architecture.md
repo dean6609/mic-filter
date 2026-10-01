@@ -21,6 +21,8 @@ The engine supports the Windows float32 processing format, 1â€“8 channels and 8â
 
 RNNoise output is 20 ms behind its input (overlap/add plus one delayed frame); with the 10 ms frame buffer the filtered path is 1440 samples late at 48 kHz. The original (dry) signal uses the same delay so partial mixes do not comb-filter. The optional voice gate fades in over 5 ms and out over 50 ms. Around speech a -20 dB share of the original signal (`kFloorGain` in `src/dsp.h`) is mixed in so word tails never drop into digital silence. It is held while RNNoise's voice probability reaches 0.6 and for 300 ms after, then fades out over 400 ms, so pauses get RNNoise's full noise reduction. The floor only adds the original signal; the voice itself always comes from RNNoise, so its fade cannot cut a word. Reported APO latency is 30 ms plus any resampler delay.
 
+Voice presets (`src/voice.cpp`) run after the mix at 48 kHz. Natural leaves samples untouched. Clear and Broadcast use five RBJ biquads (high-pass, low-mid cut, presence and air); Broadcast adds a stereo-linked compressor (3:1 above -24 dBFS, 5 ms attack, 150 ms release, +6 dB makeup). Both end in a soft limiter below full scale. Changing presets fades the polished signal out and in over 10 ms each, so it never clicks.
+
 ## Installation and upgrades
 
 The installer embeds the application, APO, scripts, quick-start instructions and licenses. It enumerates only `DEVICE_STATE_ACTIVE` capture endpoints, selects the only input automatically or asks for a number, checks the format, elevates, extracts into a protected temporary folder and starts the installation transaction.
@@ -64,6 +66,10 @@ Keep the magic and version fields compatible. Total size: **64 bytes**.
 | 40 | int64 | APO callbacks |
 | 48 | int64 | Filtered endpoint frames |
 | 56 | int64 | Last callback tick |
+
+### Options file
+
+Options added after this ABI was fixed live in `options.bin` (64 bytes, same folder and permissions), so an effect DLL still loaded from an earlier version keeps reading a valid `state.bin` until Windows restarts. Offsets: 0 magic `0x504F464D`, 4 version 1, 8 voice preset (0 Natural, 1 Clear, 2 Broadcast); the rest is reserved and zero. A missing or invalid options file means Natural.
 
 The producer ID and recent monotonic tick distinguish current callbacks from old data. Tests replace ProgramData in their own process and create a private fixture; they must never write installed telemetry.
 

@@ -100,6 +100,40 @@ void floorTest(){
     double in=0,left=0;for(unsigned n=voiced+48000;n<frames;++n){in+=input[n]*input[n];left+=out[n]*out[n];}
     require(10*std::log10(in/(left+1e-30))>35,"noise reduction away from speech is below 35 dB");
 }
+// Steady-state gain of a sine through one voice preset, in dB.
+double toneGainDb(unsigned preset,double frequency,float amplitude){
+    micfilter::VoiceChain chain;std::array<std::array<float,480>,8> block{};double in=0,out=0;
+    for(unsigned b=0;b<200;++b){
+        for(unsigned i=0;i<480;++i)block[0][i]=amplitude*static_cast<float>(std::sin(6.283185307179586*frequency*(b*480+i)/48000));
+        const auto original=block[0];chain.process(block,1,preset);
+        if(b>=100)for(unsigned i=0;i<480;++i){in+=original[i]*original[i];out+=block[0][i]*block[0][i];}
+    }
+    return 10*std::log10(out/in);
+}
+// Natural is untouched; Clear and Broadcast shape the spectrum; Broadcast evens out loudness;
+// nothing exceeds full scale and preset changes crossfade without clicks.
+void voiceTest(){
+    micfilter::VoiceChain natural;std::array<std::array<float,480>,8> block{};uint32_t rng=3;
+    for(auto& channel:block)for(float& x:channel){rng=rng*1664525u+1013904223u;x=(rng>>8)/16777216.0f-0.5f;}
+    auto copy=block;natural.process(block,8,0);require(block==copy,"Natural voice preset changes samples");
+    require(toneGainDb(1,30,0.05f)<-10,"Clear does not remove rumble");
+    const double clear1k=toneGainDb(1,1000,0.05f);
+    require(std::abs(clear1k)<1.5,"Clear changes the voice midrange");
+    require(toneGainDb(1,4000,0.05f)-clear1k>1.5,"Clear adds no presence");
+    const double quiet=toneGainDb(2,1000,0.01f),loud=toneGainDb(2,1000,0.3f);
+    require(quiet>3&&quiet<9,"Broadcast makeup gain is off");
+    require((20*std::log10(0.3)+loud)-(20*std::log10(0.01)+quiet)<22,"Broadcast does not compress");
+    micfilter::VoiceChain hot;float peak=0;
+    for(unsigned b=0;b<100;++b){for(unsigned i=0;i<480;++i)block[0][i]=0.99f*static_cast<float>(std::sin(6.283185307179586*4000*(b*480+i)/48000));hot.process(block,1,2);for(unsigned i=0;i<480;++i)peak=std::max(peak,std::abs(block[0][i]));}
+    require(peak<=1.0f,"Broadcast exceeds full scale");
+    micfilter::VoiceChain switching;float previous=0,worst=0;
+    for(unsigned b=0;b<200;++b){
+        for(unsigned i=0;i<480;++i)block[0][i]=0.1f*static_cast<float>(std::sin(6.283185307179586*1000*(b*480+i)/48000));
+        switching.process(block,1,(b/25)%3);
+        for(unsigned i=0;i<480;++i){if(b||i)worst=std::max(worst,std::abs(block[0][i]-previous));previous=block[0][i];}
+    }
+    require(worst<0.06f,"changing the voice preset clicks");
+}
 void dspTests(){
     auto input=signal(48000,2);micfilter::Settings active{true,0,20,1};
     auto one=run(input,2,{480},active),irregular=run(input,2,{1,200,512,37,960},active);
@@ -116,9 +150,11 @@ void dspTests(){
     alignmentTest();
     gateTest();
     floorTest();
+    voiceTest();
+    {micfilter::Settings off{false,0.85f,20,1,2};require(run(input,2,{200,512},off)==input,"bypass with a voice preset is not bit-exact");}
     micfilter::Processor inPlace;require(inPlace.initialize(2),"inplace init");auto same=input;inPlace.process(same.data(),same.data(),48000,false,active);require(same==one,"in-place processing corrupts input");
     micfilter::Processor silence;require(silence.initialize(1),"silent init");std::vector<float> zeros(512,1);silence.process(nullptr,zeros.data(),512,true,{false,0,20,1});for(float x:zeros)require(x==0,"silent bypass failed");
-    std::cout<<"PASS DSP: bit-exact bypass, direct model equivalence, callback sizes 1/37/200/480/512/960, stereo, in-place, silence, dry/wet aligned to measured 30 ms model delay, faded gate, -20 dB floor around speech, >35 dB noise reduction away from speech\n";
+    std::cout<<"PASS DSP: bit-exact bypass, direct model equivalence, callback sizes 1/37/200/480/512/960, stereo, in-place, silence, dry/wet aligned to measured 30 ms model delay, faded gate, -20 dB floor around speech, >35 dB noise reduction away from speech, voice presets (EQ, compression, limiter, click-free changes)\n";
     auto performanceInput=signal(48000*10,2);auto begin=std::chrono::steady_clock::now();run(performanceInput,2,{480},active);double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
     std::cout<<"BENCHMARK: 10 seconds stereo processed in "<<seconds<<" seconds; real-time factor "<<seconds/10<<" (CPU synthetic workload, not microphone latency)\n";
 }

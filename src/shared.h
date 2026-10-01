@@ -33,6 +33,19 @@ struct alignas(8) SharedState {
 };
 static_assert(sizeof(SharedState) == 64);
 
+// Options added after the SharedState ABI was fixed live in their own file (options.bin), so an
+// older effect DLL still loaded by audiodg.exe keeps working until Windows restarts.
+inline constexpr LONG kOptionsMagic = 0x504f464d;
+inline constexpr LONG kOptionsVersion = 1;
+inline constexpr LONG kVoicePresets = 3; // 0 Natural, 1 Clear, 2 Broadcast
+struct alignas(8) Options {
+    LONG magic;
+    LONG version;
+    volatile LONG voicePreset;
+    LONG reserved[13];
+};
+static_assert(sizeof(Options) == 64);
+
 inline LONG read(volatile LONG& v) noexcept { return InterlockedCompareExchange(&v, 0, 0); }
 inline LONG64 read(volatile LONG64& v) noexcept { return InterlockedCompareExchange64(&v, 0, 0); }
 inline bool recentAudio(SharedState* p) noexcept {
@@ -52,16 +65,19 @@ inline std::wstring dataDirectory() {
     return current;
 }
 
-class StateMapping {
+// Maps one fixed-size control file from the data directory and checks its magic and version.
+template<typename T, LONG Magic, LONG Version>
+class FileMapping {
+    const wchar_t* name_;
     HANDLE file_ = INVALID_HANDLE_VALUE;
     HANDLE mapping_ = nullptr;
-    SharedState* state_ = nullptr;
+    T* state_ = nullptr;
 public:
-    StateMapping() = default;
-    StateMapping(const StateMapping&) = delete;
-    StateMapping& operator=(const StateMapping&) = delete;
-    ~StateMapping() { close(); }
-    SharedState* get() const noexcept { return state_; }
+    explicit FileMapping(const wchar_t* name) : name_(name) {}
+    FileMapping(const FileMapping&) = delete;
+    FileMapping& operator=(const FileMapping&) = delete;
+    ~FileMapping() { close(); }
+    T* get() const noexcept { return state_; }
     void close() noexcept {
         if (state_) UnmapViewOfFile(state_);
         if (mapping_) CloseHandle(mapping_);
@@ -72,28 +88,33 @@ public:
         close();
         const auto dir=dataDirectory();
         if (dir.empty()) return false;
-        file_=CreateFileW((dir+L"\\state.bin").c_str(), GENERIC_READ|GENERIC_WRITE,
+        file_=CreateFileW((dir+L"\\"+name_).c_str(), GENERIC_READ|GENERIC_WRITE,
                          FILE_SHARE_READ|FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
         if (file_==INVALID_HANDLE_VALUE) return false;
         LARGE_INTEGER length{};
-        if (!GetFileSizeEx(file_, &length) || length.QuadPart != sizeof(SharedState)) { close(); return false; }
+        if (!GetFileSizeEx(file_, &length) || length.QuadPart != sizeof(T)) { close(); return false; }
         mapping_=CreateFileMappingW(file_, nullptr, PAGE_READWRITE, 0, 0, nullptr);
         if (!mapping_) { close(); return false; }
-        state_=static_cast<SharedState*>(MapViewOfFile(mapping_, FILE_MAP_READ|FILE_MAP_WRITE, 0, 0, sizeof(SharedState)));
-        if (!state_ || state_->magic!=kMagic || state_->version!=kStateVersion) { close(); return false; }
+        state_=static_cast<T*>(MapViewOfFile(mapping_, FILE_MAP_READ|FILE_MAP_WRITE, 0, 0, sizeof(T)));
+        if (!state_ || state_->magic!=Magic || state_->version!=Version) { close(); return false; }
         return true;
     }
 };
+struct StateMapping : FileMapping<SharedState,kMagic,kStateVersion> { StateMapping() : FileMapping(L"state.bin") {} };
+struct OptionsMapping : FileMapping<Options,kOptionsMagic,kOptionsVersion> { OptionsMapping() : FileMapping(L"options.bin") {} };
 struct Settings {
     bool enabled=false;
     float threshold=0.85f;
     unsigned grace=20;
     float wet=1.0f;
+    unsigned voice=0;
 };
-inline Settings snapshot(SharedState* p) noexcept {
+// A missing options file means the Natural voice preset.
+inline Settings snapshot(SharedState* p, Options* options=nullptr) noexcept {
     if (!p || p->magic!=kMagic || p->version!=kStateVersion) return {};
+    const LONG voice=options ? std::clamp(read(options->voicePreset),0L,kVoicePresets-1) : 0;
     return {read(p->enabled)!=0, std::clamp(read(p->thresholdPermille),0L,1000L)/1000.0f,
             static_cast<unsigned>(std::clamp(read(p->graceBlocks),0L,500L)),
-            std::clamp(read(p->wetPermille),0L,1000L)/1000.0f};
+            std::clamp(read(p->wetPermille),0L,1000L)/1000.0f, static_cast<unsigned>(voice)};
 }
 }

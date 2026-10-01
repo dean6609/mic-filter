@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.3 — 2026-10-01
+
+- **Voice sound** presets in the tray menu: **Natural** (unchanged, default), **Clear** (removes rumble and low-mid boominess, adds presence and air) and **Broadcast** (stronger presence plus gentle compression for an even, polished voice). Both polished presets end in a soft limiter; switching presets crossfades without clicks. Processing cost is about 0.3% of one CPU core.
+- Clearer tray menu: options grouped under **Voice sound**, **Silence between words** (Off / Balanced / Strict) and **Original microphone sound** (0% / 15%). "Start with Windows" is now "Show this icon when Windows starts", and Exit reads "Exit and disable filter".
+- Presets are stored in a new `options.bin`, so the existing `state.bin` format is unchanged.
+
 ## 0.5.2 — 2026-10-01
 
 - Full noise reduction is back away from speech. Since 0.5.0 a fixed -20 dB share of the original signal was always mixed in, which capped noise reduction at 20 dB and let taps, clicks and background noise through. That share is now held only while RNNoise detects speech and for 300 ms after it, then fades out over 400 ms. Word endings keep the 0.5.0 behavior; in pauses, background noise drops by about 47 dB in tests (was 20 dB).

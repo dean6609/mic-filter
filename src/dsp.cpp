@@ -24,7 +24,7 @@ bool Processor::initialize(unsigned channels) {
     return true;
 }
 void Processor::reset() noexcept {
-    position_=0; graceLeft_=0; floorHoldLeft_=0; gate_=1.0f; floor_=0.0f; previouslyEnabled_=false;
+    position_=0; graceLeft_=0; floorHoldLeft_=0; gate_=1.0f; floor_=0.0f; voice_.reset(); previouslyEnabled_=false;
     input_={}; dryPrevious_={}; dryOlder_={}; output_={};
     for(unsigned c=0;c<channels_;++c) if(states_[c]) rnnoise_init(states_[c],nullptr);
 }
@@ -53,6 +53,7 @@ void Processor::block(const Settings& settings) noexcept {
             output_[c][i]=mixed*(1.0f-floorGain) + dry*floorGain;
         }
     }
+    voice_.process(output_,channels_,settings.voice);
     dryOlder_=dryPrevious_;
     for(unsigned c=0;c<channels_;++c)
         for(unsigned i=0;i<480;++i) dryPrevious_[c][i]=input_[c][i]/32767.0f;

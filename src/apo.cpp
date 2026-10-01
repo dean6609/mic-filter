@@ -30,6 +30,7 @@ class Apo final:public IAudioProcessingObject,public IAudioProcessingObjectRT,
     UINT32 channels_=0,maxFrames_=0;
     float rate_=0;
     micfilter::StateMapping mapping_;
+    micfilter::OptionsMapping options_;
     micfilter::RateProcessor processor_;
     micfilter::Trace trace_;
     HRESULT report(const wchar_t* step,HRESULT result){
@@ -63,6 +64,7 @@ public:
         if(bytes && !data)return E_POINTER;
         initialized_=true;
         const bool mapped=mapping_.open(); // All file operations happen before real-time processing.
+        options_.open(); // Optional: without it the Natural voice preset applies.
         const auto mappingError=mapped?0:GetLastError();
         trace_.write(L"Initialize bytes="+std::to_wstring(bytes)+L" controls="+std::to_wstring(mapped)+L" mappingError="+std::to_wstring(mappingError));
         return S_OK;
@@ -137,7 +139,7 @@ public:
         if(!silent&&!inputBuffer)return;
         auto* dst=reinterpret_cast<float*>(out[0]->pBuffer);
         const auto* src=reinterpret_cast<const float*>(inputBuffer);
-        auto* state=mapping_.get();const auto settings=micfilter::snapshot(state);
+        auto* state=mapping_.get();const auto settings=micfilter::snapshot(state,options_.get());
         if(supported_)processor_.process(src,dst,frames,silent,settings);
         else if(silent)std::memset(dst,0,static_cast<size_t>(frames)*channels_*4);
         else if(src!=dst)std::memcpy(dst,src,static_cast<size_t>(frames)*channels_*4);

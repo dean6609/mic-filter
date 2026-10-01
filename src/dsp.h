@@ -1,5 +1,6 @@
 #pragma once
 #include "shared.h"
+#include "voice.h"
 #include <array>
 #include <rnnoise.h>
 
@@ -31,6 +32,7 @@ class Processor {
     std::array<std::array<float,480>,8> dryPrevious_{};
     std::array<std::array<float,480>,8> dryOlder_{};
     std::array<std::array<float,480>,8> output_{};
+    VoiceChain voice_;
     void block(const Settings& settings) noexcept;
 public:
     Processor()=default;

@@ -31,11 +31,11 @@ foreach($file in @('x86cpu','x86_dnn_map','nnet_avx2','nnet_sse4_1')){
     if($LASTEXITCODE -ne 0){throw ('Could not compile '+$file)}
 }
 $cppFlags=@('-std=c++20','-Wall','-Wextra','-Wno-unknown-pragmas','-static')
-& $cxx @common @cppFlags '-shared' (Join-Path $root 'src\apo.cpp') (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\rate_processor.cpp') (Join-Path $root 'src\apo.def') @rnObjects '-lole32' '-luuid' '-ladvapi32' '-o' (Join-Path $output 'MicFilterAPO.dll')
+& $cxx @common @cppFlags '-shared' (Join-Path $root 'src\apo.cpp') (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\voice.cpp') (Join-Path $root 'src\rate_processor.cpp') (Join-Path $root 'src\apo.def') @rnObjects '-lole32' '-luuid' '-ladvapi32' '-o' (Join-Path $output 'MicFilterAPO.dll')
 if($LASTEXITCODE -ne 0){throw 'Could not compile APO'}
 & $cxx @common @cppFlags '-municode' '-mwindows' (Join-Path $root 'src\tray.cpp') '-lole32' '-luuid' '-lshell32' '-lpropsys' '-ladvapi32' '-lgdi32' '-luser32' '-o' (Join-Path $output 'MicFilter.exe')
 if($LASTEXITCODE -ne 0){throw 'Could not compile the tray application'}
-& $cxx @common @cppFlags (Join-Path $root 'tests\tests.cpp') (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\rate_processor.cpp') @rnObjects '-lole32' '-luuid' '-o' (Join-Path $output 'MicFilterTests.exe')
+& $cxx @common @cppFlags (Join-Path $root 'tests\tests.cpp') (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\voice.cpp') (Join-Path $root 'src\rate_processor.cpp') @rnObjects '-lole32' '-luuid' '-o' (Join-Path $output 'MicFilterTests.exe')
 if($LASTEXITCODE -ne 0){throw 'Could not compile tests'}
 foreach($scriptName in @('install.ps1','installer-registry.ps1')){
     $scriptText=Get-Content -LiteralPath (Join-Path $root $scriptName) -Raw -Encoding UTF8

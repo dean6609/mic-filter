@@ -36,11 +36,19 @@ The first installation enables the filter. Open the desktop shortcut whenever yo
 | --- | --- |
 | Open MicFilter | Show the tray icon and keep the current setting. |
 | Click the icon | Enable or disable filtering. |
-| **Exit (leave original audio)** | Disable the filter and close the app. |
+| **Exit and disable filter** | Disable the filter and close the app. |
 | Restart Windows | Keep the last enabled/disabled setting. |
 | Leave the app closed | Windows continues using the saved filter setting. |
 
-Right-click for diagnostics, voice-detection profiles and dry/wet mix. The default uses RNNoise without an extra silence gate to reduce avoidable word cutoffs. **Filter confirmed** means the installed effect has recent processing activity.
+Right-click for options:
+
+| Option | Choices |
+| --- | --- |
+| **Voice sound** | **Natural** (as captured, default) · **Clear** (removes rumble and boominess, adds presence and air) · **Broadcast** (stronger presence plus gentle compression for an even, polished voice). |
+| **Silence between words** | **Off** (default, noise removal only) · **Balanced** and **Strict** also silence pauses, but can clip very soft words. |
+| **Original microphone sound** | **0%** (cleanest, default) · **15%** (more natural, some noise returns). |
+
+**Filter confirmed** in the menu means the installed effect has recent processing activity.
 
 One microphone is managed per installation. To switch, choose **Remove effect and restore configuration**, then run setup again.
 

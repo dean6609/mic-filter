@@ -1,4 +1,4 @@
-MicFilter 0.5.2 — Native microphone noise suppression for Windows
+MicFilter 0.5.3 — Native microphone noise suppression for Windows
 
 INSTALL
 Double-click MicFilter-Setup.exe and accept the Windows administrator prompt.
@@ -12,8 +12,14 @@ CONTROL
 The first installation enables the filter. Windows applies the saved setting
 when an app uses the selected microphone, even when the tray app is closed.
 Opening MicFilter shows the tray icon without changing the setting.
-Click the icon to enable/disable. Right-click for profiles and diagnostics.
-Exit (leave original audio) disables filtering and closes the tray app.
+Click the icon to enable/disable. Right-click for these options:
+  Voice sound: Natural (as captured), Clear (brighter, less boomy) or
+    Broadcast (polished, more even volume).
+  Silence between words: Off is recommended; Balanced and Strict also
+    silence pauses but can clip very soft words.
+  Original microphone sound: 15% sounds more natural but lets some noise back.
+Exit and disable filter closes the tray app AND turns filtering off.
+The filter works with the tray app closed; you only need it to change options.
 Restarting Windows preserves the last enabled/disabled setting.
 
 COMPATIBILITY
