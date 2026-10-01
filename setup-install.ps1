@@ -11,7 +11,7 @@ $backupPath=Join-Path $dataDir 'installation.json'
 $configPath='HKLM:\SOFTWARE\Classes\CLSID\'+$ownClsid
 $classPath='HKLM:\SOFTWARE\Classes\CLSID\'+$ownClsid+'\InprocServer32'
 $fxSubKey='SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\'+$endpointText+'\FxProperties'
-$effectsKey=$null;$changed=$false;$complete=$false;$exitCode=1
+$effectsKey=$null;$changed=$false;$complete=$false;$exitCode=1;$previousVersionLoaded=$false
 $oldControls=$null;$oldSlot=$null;$oldDll=$null;$oldConfig=$null;$oldBackup=$null
 $logPath=$null;$createdShortcuts=@()
 function Write-ProgressLine([string]$Message){Write-Host $Message;if($logPath){[IO.File]::AppendAllText($logPath,[DateTime]::Now.ToString('o')+' '+$Message+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))}}
@@ -93,6 +93,9 @@ try {
         $registeredDll=(Get-Item -LiteralPath $classPath).GetValue('')
         $pending=0
         foreach($dll in @(Get-ChildItem -LiteralPath $programDir -Filter 'MicFilterAPO-*.dll' -File)){if($dll.FullName -ne $registeredDll){$pending+=Remove-PathOrSchedule -Path $dll.FullName}}
+        # An older effect DLL that cannot be deleted is still loaded by Windows audio (audiodg.exe),
+        # which keeps processing with it until Windows restarts.
+        $previousVersionLoaded=$pending -gt 0
         $runPath='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
         if(Get-ItemProperty -LiteralPath $runPath -Name 'WavoFilter' -ErrorAction SilentlyContinue){New-ItemProperty -LiteralPath $runPath -Name 'MicFilter' -Value ('"'+$exe+'"') -PropertyType String -Force | Out-Null;Remove-ItemProperty -LiteralPath $runPath -Name 'WavoFilter'}
         $legacyDir=Join-Path $env:ProgramFiles 'WavoFilter'
@@ -103,7 +106,8 @@ try {
         }
         if($pending){Write-ProgressLine ('Older files still in use by Windows audio will be deleted at the next restart: '+$pending)}
     }catch{Write-ProgressLine ('Cleanup of older files skipped: '+$_.Exception.Message)}
-    if($confirmed){Write-ProgressLine 'READY: the filter processed real audio successfully.'}
+    if($previousVersionLoaded){Write-ProgressLine 'RESTART REQUIRED: Windows audio is still using the previous version of the filter. Restart Windows to finish the update.'}
+    elseif($confirmed){Write-ProgressLine 'READY: the filter processed real audio successfully.'}
     else{Write-ProgressLine 'INSTALLED, pending confirmation: reconnect the microphone or restart Windows, then check diagnostics while recording. If "Filter confirmed" does not appear, remove the effect from the tray menu.'}
     if([BitConverter]::ToInt32($finalControls,8)){Write-ProgressLine 'The filter is enabled and will keep this setting after reboot.'}else{Write-ProgressLine 'Previous setting preserved: filter disabled. Open the app and click the tray icon to enable it.'}
     Write-ProgressLine 'Open MicFilter from the desktop or Start menu to see its tray icon and options.'

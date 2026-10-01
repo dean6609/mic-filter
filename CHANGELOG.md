@@ -3,6 +3,7 @@
 ## 0.5.2 — 2026-10-01
 
 - Full noise reduction is back away from speech. Since 0.5.0 a fixed -20 dB share of the original signal was always mixed in, which capped noise reduction at 20 dB and let taps, clicks and background noise through. That share is now held only while RNNoise detects speech and for 300 ms after it, then fades out over 400 ms. Word endings keep the 0.5.0 behavior; in pauses, background noise drops by about 47 dB in tests (was 20 dB).
+- Setup now says RESTART REQUIRED instead of READY when Windows audio still has the previous filter version loaded; until Windows restarts, an update keeps processing with the old version.
 - Tests re-derive the floor from the model's voice probability, check that it fades out without clicks and require more than 35 dB of noise reduction away from speech.
 
 ## 0.5.1 — 2026-10-01
