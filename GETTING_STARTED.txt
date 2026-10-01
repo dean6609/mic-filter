@@ -1,0 +1,39 @@
+MicFilter 0.4.0 — Native microphone noise suppression for Windows
+
+INSTALL
+Double-click MicFilter-Setup.exe and accept the Windows administrator prompt.
+Only connected, enabled microphones appear. If there is one, setup selects it
+automatically; if there are several, choose a number. Setup shows progress,
+checks capture without saving your voice, and creates MicFilter on the desktop.
+All components and the model are included; installation works offline.
+
+CONTROL
+The first installation enables the filter. Windows applies the saved setting
+when an app uses the selected microphone, even when the tray app is closed.
+Opening MicFilter shows the tray icon without changing the setting.
+Click the icon to enable/disable. Right-click for profiles and diagnostics.
+Exit (leave original audio) disables filtering and closes the tray app.
+Restarting Windows preserves the last enabled/disabled setting.
+
+COMPATIBILITY
+Windows x64 (Intel/AMD), any microphone brand, 1–8 channels, 8–192 kHz.
+The device and app must support Windows shared capture and the effects route.
+Other manufacturer effects may conflict; setup preserves them and reports it.
+RAW or exclusive-mode applications can bypass system effects.
+This is a noise-suppression filter, not a host for additional VST plugins.
+
+If setup asks for reconnection or a reboot, do that, open a capture app and
+check for Filter confirmed in diagnostics. Listen to consonants, quiet word
+endings and dictation quality as well as the noise reduction.
+
+REMOVE
+Right-click the icon and choose Remove effect and restore configuration.
+Reconnect the microphone or restart Windows to rebuild its effects chain.
+One microphone is managed per installation. Remove the current effect before
+running setup again to select another microphone.
+
+The installer is unsigned and Windows may display an unknown-publisher prompt.
+It never asks you to disable Windows security protections.
+
+Source and downloads: https://github.com/dean6609/mic-filter
+GPL-3.0; RNNoise and SpeexDSP retain their included BSD license notices.

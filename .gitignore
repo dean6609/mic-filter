@@ -2,6 +2,7 @@ tools/
 build/
 dist/
 dist-update/
+dist-*/
 dist-release/
 release/
 test-results.txt

@@ -2,7 +2,7 @@
 #include "dsp.h"
 #include <speex_resampler.h>
 
-namespace wavo {
+namespace micfilter {
 // Resampler tables and all buffers are created before entering the audio callback.
 // Keep the proven 48 kHz path unchanged; bypass always preserves the original samples.
 class RateProcessor {

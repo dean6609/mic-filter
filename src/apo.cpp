@@ -14,7 +14,7 @@ bool format(IAudioMediaType* media,UNCOMPRESSEDAUDIOFORMAT& out) {
         out.dwValidBitsPerSample==32 && out.dwSamplesPerFrame>=1 && out.dwSamplesPerFrame<=8 &&
         out.fFramesPerSecond>=8000.0f && out.fFramesPerSecond<=192000.0f;
 }
-#ifdef WAVO_DIAGNOSTIC_CLSID
+#ifdef MICFILTER_DIAGNOSTIC_CLSID
 using SystemEffectsInterface=IAudioSystemEffects2;
 #else
 using SystemEffectsInterface=IAudioSystemEffects;
@@ -34,10 +34,10 @@ class Apo final:public IAudioProcessingObject,public IAudioProcessingObjectRT,
     bool initialized_=false,locked_=false,supported_=false;
     UINT32 channels_=0,maxFrames_=0;
     float rate_=0;
-    wavo::StateMapping mapping_;
-    wavo::RateProcessor processor_;
-    wavo::Trace trace_;
-    wavo::DiagnosticMapping diagnostic_;
+    micfilter::StateMapping mapping_;
+    micfilter::RateProcessor processor_;
+    micfilter::Trace trace_;
+    micfilter::DiagnosticMapping diagnostic_;
     HRESULT report(const wchar_t* step,HRESULT result){
         std::wostringstream log;log<<step<<L" HRESULT=0x"<<std::hex<<static_cast<unsigned long>(result);trace_.write(log.str());
         if(auto* p=diagnostic_.get())InterlockedExchange(&p->result,result);
@@ -58,7 +58,7 @@ public:
         else if(iid==__uuidof(IAudioProcessingObjectRT)) *out=static_cast<IAudioProcessingObjectRT*>(this);
         else if(iid==__uuidof(IAudioProcessingObjectConfiguration)) *out=static_cast<IAudioProcessingObjectConfiguration*>(this);
         else if(iid==__uuidof(IAudioSystemEffects)) *out=static_cast<IAudioSystemEffects*>(this);
-#ifdef WAVO_DIAGNOSTIC_CLSID
+#ifdef MICFILTER_DIAGNOSTIC_CLSID
         else if(iid==__uuidof(IAudioSystemEffects2)) *out=static_cast<IAudioSystemEffects2*>(this);
 #endif
         else return E_NOINTERFACE;
@@ -68,10 +68,10 @@ public:
     ULONG STDMETHODCALLTYPE Release() override {return outer_?outer_->Release():nonDelegatingRelease();}
     ULONG nonDelegatingAddRef(){return InterlockedIncrement(&references_);}
     ULONG nonDelegatingRelease(){const auto n=InterlockedDecrement(&references_);if(!n)delete this;return n;}
-#ifdef WAVO_DIAGNOSTIC_CLSID
+#ifdef MICFILTER_DIAGNOSTIC_CLSID
     HRESULT STDMETHODCALLTYPE GetEffectsList(LPGUID* effects,UINT* count,HANDLE) override {
         if(!effects||!count)return E_POINTER;*effects=nullptr;*count=0;
-        if(!wavo::snapshot(mapping_.get()).enabled)return S_OK;
+        if(!micfilter::snapshot(mapping_.get()).enabled)return S_OK;
         auto* effect=static_cast<GUID*>(CoTaskMemAlloc(sizeof(GUID)));if(!effect)return E_OUTOFMEMORY;
         *effect=GUID{0x6f64adbf,0x8211,0x11e2,{0x8c,0x70,0x2c,0x27,0xd7,0xf0,0x01,0xfa}};*effects=effect;*count=1;return S_OK;
     }
@@ -91,7 +91,7 @@ public:
     HRESULT STDMETHODCALLTYPE GetLatency(HNSTIME* time) override {
         if(!time)return E_POINTER;
         // 10 ms buffering plus RNNoise's 10 ms overlap/add. Bypass has zero delay.
-        *time=(supported_ && wavo::snapshot(mapping_.get()).enabled) ? processor_.latency() : 0;
+        *time=(supported_ && micfilter::snapshot(mapping_.get()).enabled) ? processor_.latency() : 0;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE GetInputChannelCount(UINT32* count) override {if(!count)return E_POINTER;*count=channels_?channels_:2;return S_OK;}
@@ -104,10 +104,10 @@ public:
         auto* p=static_cast<APO_REG_PROPERTIES*>(CoTaskMemAlloc(size));
         if(!p)return E_OUTOFMEMORY;
         std::memset(p,0,size);
-        p->clsid=wavo::kClsid;p->Flags=static_cast<APO_FLAG>(APO_FLAG_DEFAULT|APO_FLAG_INPLACE);
-        wcscpy_s(p->szFriendlyName,L"Wavo Filter - RNNoise v1.21");
+        p->clsid=micfilter::kClsid;p->Flags=static_cast<APO_FLAG>(APO_FLAG_DEFAULT|APO_FLAG_INPLACE);
+        wcscpy_s(p->szFriendlyName,L"MicFilter - RNNoise v1.21");
         wcscpy_s(p->szCopyrightInfo,L"GPL-3.0; RNNoise: Xiph.Org BSD-3-Clause");
-        p->u32MajorVersion=0;p->u32MinorVersion=3;
+        p->u32MajorVersion=0;p->u32MinorVersion=4;
         p->u32MinInputConnections=p->u32MaxInputConnections=1;
         p->u32MinOutputConnections=p->u32MaxOutputConnections=1;
         p->u32MaxInstances=UINT32_MAX;p->u32NumAPOInterfaces=interfaceCount;
@@ -161,7 +161,7 @@ public:
         if(!silent&&!inputBuffer){if(diagnostic)InterlockedExchange(&diagnostic->rejection,6);return;}
         auto* dst=reinterpret_cast<float*>(out[0]->pBuffer);
         const auto* src=reinterpret_cast<const float*>(inputBuffer);
-        auto* state=mapping_.get();const auto settings=wavo::snapshot(state);
+        auto* state=mapping_.get();const auto settings=micfilter::snapshot(state);
         if(supported_)processor_.process(src,dst,frames,silent,settings);
         else if(silent)std::memset(dst,0,static_cast<size_t>(frames)*channels_*4);
         else if(src!=dst)std::memcpy(dst,src,static_cast<size_t>(frames)*channels_*4);
@@ -182,13 +182,13 @@ public:
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** p) override {if(!p)return E_POINTER;*p=nullptr;if(iid!=__uuidof(IUnknown)&&iid!=__uuidof(IClassFactory))return E_NOINTERFACE;*p=this;AddRef();return S_OK;}
     ULONG STDMETHODCALLTYPE AddRef() override{return InterlockedIncrement(&references_);}
     ULONG STDMETHODCALLTYPE Release() override {auto n=InterlockedDecrement(&references_);if(!n)delete this;return n;}
-    HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown* outer,REFIID iid,void** p) override {wavo::Trace trace;wchar_t text[40]{};StringFromGUID2(iid,text,40);trace.write(L"Factory outer="+std::to_wstring(outer!=nullptr)+L" iid="+text);if(!p)return E_POINTER;*p=nullptr;if(outer&&iid!=__uuidof(IUnknown))return E_NOINTERFACE;auto* apo=new(std::nothrow)Apo(outer);if(!apo)return E_OUTOFMEMORY;auto hr=apo->nonDelegatingQueryInterface(iid,p);apo->nonDelegatingRelease();return hr;}
+    HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown* outer,REFIID iid,void** p) override {micfilter::Trace trace;wchar_t text[40]{};StringFromGUID2(iid,text,40);trace.write(L"Factory outer="+std::to_wstring(outer!=nullptr)+L" iid="+text);if(!p)return E_POINTER;*p=nullptr;if(outer&&iid!=__uuidof(IUnknown))return E_NOINTERFACE;auto* apo=new(std::nothrow)Apo(outer);if(!apo)return E_OUTOFMEMORY;auto hr=apo->nonDelegatingQueryInterface(iid,p);apo->nonDelegatingRelease();return hr;}
     HRESULT STDMETHODCALLTYPE LockServer(BOOL lock) override {if(lock)InterlockedIncrement(&locks);else InterlockedDecrement(&locks);return S_OK;}
 };
 }
 extern "C" HRESULT __stdcall DllGetClassObject(REFCLSID clsid,REFIID iid,void** out) {
-    wavo::Trace trace;trace.write(L"DllGetClassObject");
-    if(!out)return E_POINTER;*out=nullptr;if(clsid!=wavo::kClsid)return CLASS_E_CLASSNOTAVAILABLE;
+    micfilter::Trace trace;trace.write(L"DllGetClassObject");
+    if(!out)return E_POINTER;*out=nullptr;if(clsid!=micfilter::kClsid)return CLASS_E_CLASSNOTAVAILABLE;
     auto* factory=new(std::nothrow)Factory;if(!factory)return E_OUTOFMEMORY;
     const auto hr=factory->QueryInterface(iid,out);factory->Release();return hr;
 }

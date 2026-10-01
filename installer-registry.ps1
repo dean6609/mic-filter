@@ -12,13 +12,13 @@ function Open-EndpointEffectsKey {
         $key=$baseKey.OpenSubKey($SubKey,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,$rights)
         if(-not $key -and $CreateIfMissing){
             $separator=$SubKey.LastIndexOf('\')
-            if($separator -le 0){throw 'Ruta de efectos inválida.'}
+            if($separator -le 0){throw 'Invalid effect path.'}
             $parent=$baseKey.OpenSubKey($SubKey.Substring(0,$separator),[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,([Security.AccessControl.RegistryRights]::ReadKey -bor [Security.AccessControl.RegistryRights]::CreateSubKey))
-            if(-not $parent){throw 'No existe el dispositivo seleccionado.'}
+            if(-not $parent){throw 'The selected device does not exist.'}
             try{$created=$parent.CreateSubKey($SubKey.Substring($separator+1));$created.Dispose()}finally{$parent.Dispose()}
             $key=$baseKey.OpenSubKey($SubKey,[Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,$rights)
         }
-        if(-not $key){throw 'No existe la clave de efectos del dispositivo.'}
+        if(-not $key){throw 'The device effect key does not exist.'}
         return $key
     } finally {$baseKey.Dispose()}
 }
@@ -27,5 +27,5 @@ function Set-EndpointEffect {
           [Parameter(Mandatory=$true)][string]$Name,
           [Parameter(Mandatory=$true)][string]$Value)
     $Key.SetValue($Name,$Value,[Microsoft.Win32.RegistryValueKind]::String)
-    if($Key.GetValue($Name) -ne $Value){throw 'El valor del efecto no coincide después de escribirlo.'}
+    if($Key.GetValue($Name) -ne $Value){throw 'The effect value does not match after writing it.'}
 }

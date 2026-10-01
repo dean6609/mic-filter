@@ -3,7 +3,7 @@
 #include <evntprov.h>
 #include <sstream>
 
-namespace wavo {
+namespace micfilter {
 inline constexpr GUID kTraceProvider={0x7e40186c,0xa78b,0x4d7a,{0x93,0x71,0x66,0x2b,0x98,0x91,0x54,0x03}};
 class Trace {
     REGHANDLE handle_=0;

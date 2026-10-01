@@ -2,7 +2,7 @@
 #include <cmath>
 #include <cstring>
 
-namespace wavo {
+namespace micfilter {
 Processor::~Processor() {
     for(auto* s:states_) if(s) { VirtualUnlock(s,rnnoise_get_size()); rnnoise_destroy(s); }
     VirtualUnlock(this,sizeof(*this));

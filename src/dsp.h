@@ -3,7 +3,7 @@
 #include <array>
 #include <rnnoise.h>
 
-namespace wavo {
+namespace micfilter {
 // The model and rnnoise_process_frame are unchanged from Werman's v1.21.
 // This streaming adapter accepts arbitrary Windows callback sizes using fixed buffers.
 // Default gate values match v1.21 (85%, 200 ms, zero retroactive grace, 100% wet).

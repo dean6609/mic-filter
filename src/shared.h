@@ -6,17 +6,17 @@
 #include <algorithm>
 #include <string>
 
-namespace wavo {
-#ifdef WAVO_DIAGNOSTIC_CLSID
+namespace micfilter {
+#ifdef MICFILTER_DIAGNOSTIC_CLSID
 inline constexpr wchar_t kClsidText[] = L"{4A1F2290-FE8C-4F3A-9855-EEB7BC038171}";
 inline constexpr GUID kClsid = {0x4a1f2290,0xfe8c,0x4f3a,{0x98,0x55,0xee,0xb7,0xbc,0x03,0x81,0x71}};
 #else
-inline constexpr wchar_t kClsidText[] = L"{54F530A1-D045-4C70-8999-11CF13E0DDAF}";
-inline constexpr GUID kClsid = {0x54f530a1,0xd045,0x4c70,{0x89,0x99,0x11,0xcf,0x13,0xe0,0xdd,0xaf}};
+inline constexpr wchar_t kClsidText[] = L"{CDB2B27A-3B40-4B79-95AA-123C7136D873}";
+inline constexpr GUID kClsid = {0xcdb2b27a,0x3b40,0x4b79,{0x95,0xaa,0x12,0x3c,0x71,0x36,0xd8,0x73}};
 #endif
 inline constexpr LONG kMagic = 0x5741564f;
 inline constexpr LONG kStateVersion = 1;
-inline constexpr wchar_t kWindowClass[] = L"WavoFilter.Native.Tray.v1";
+inline constexpr wchar_t kWindowClass[] = L"MicFilter.Native.Tray.v1";
 inline constexpr UINT kControlMessage = WM_APP + 20;
 
 // One aligned, shared, fixed-size file. UI writes control fields; APO writes telemetry.
@@ -50,7 +50,11 @@ inline std::wstring dataDirectory() {
     wchar_t buffer[32768]{};
     const auto length = GetEnvironmentVariableW(L"ProgramData", buffer, 32768);
     if (!length || length >= 32768) return L"";
-    return std::wstring(buffer) + L"\\WavoFilter";
+    const auto current=std::wstring(buffer)+L"\\MicFilter";
+    const auto legacy=std::wstring(buffer)+L"\\WavoFilter";
+    // Existing installations keep their shared control file during the rename.
+    if(GetFileAttributesW((current+L"\\state.bin").c_str())==INVALID_FILE_ATTRIBUTES&&GetFileAttributesW((legacy+L"\\state.bin").c_str())!=INVALID_FILE_ATTRIBUTES)return legacy;
+    return current;
 }
 
 class StateMapping {

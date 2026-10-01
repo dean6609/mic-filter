@@ -20,7 +20,7 @@ constexpr UINT idInstallerLog=115;
 struct Device{std::wstring id,name,guid;};
 std::vector<Device> devices;
 Device selected;
-wavo::StateMapping mapping;
+micfilter::StateMapping mapping;
 HWND window=nullptr;
 NOTIFYICONDATAW tray{};
 HICON icons[3]{};
@@ -30,6 +30,7 @@ UINT taskbarCreated=0;
 HANDLE installerProcess=nullptr;
 bool installerRemoving=false;
 std::wstring installerResultPath,lastInstallerLog;
+HWND existingTray(){auto current=FindWindowW(micfilter::kWindowClass,nullptr);return current?current:FindWindowW(L"WavoFilter.Native.Tray.v1",nullptr);}
 void printUtf8(const std::wstring& text){const int count=WideCharToMultiByte(CP_UTF8,0,text.data(),static_cast<int>(text.size()),nullptr,0,nullptr,nullptr);std::string bytes(count,'\0');WideCharToMultiByte(CP_UTF8,0,text.data(),static_cast<int>(text.size()),bytes.data(),count,nullptr,nullptr);DWORD written=0;WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),bytes.data(),static_cast<DWORD>(bytes.size()),&written,nullptr);}
 void checkCom(){
     class Outer final:public IUnknown {
@@ -48,7 +49,7 @@ void checkCom(){
     printUtf8(report.str());
 }
 std::wstring executableDirectory(){wchar_t p[32768]{};GetModuleFileNameW(nullptr,p,32768);std::wstring s=p;return s.substr(0,s.find_last_of(L"\\/"));}
-std::wstring logDirectory(){wchar_t path[32768]{};const auto count=GetEnvironmentVariableW(L"LOCALAPPDATA",path,32768);return count&&count<32768?std::wstring(path)+L"\\WavoFilter\\logs":L"";}
+std::wstring logDirectory(){wchar_t path[32768]{};const auto count=GetEnvironmentVariableW(L"LOCALAPPDATA",path,32768);return count&&count<32768?std::wstring(path)+L"\\MicFilter\\logs":L"";}
 std::wstring latestInstallerLog(){
     const auto directory=logDirectory();if(directory.empty())return L"";
     WIN32_FIND_DATAW entry{};HANDLE files=FindFirstFileW((directory+L"\\installer-*.log").c_str(),&entry);if(files==INVALID_HANDLE_VALUE)return L"";
@@ -67,7 +68,7 @@ std::wstring prop(IPropertyStore* store,const PROPERTYKEY& key){PROPVARIANT valu
 void enumerate(){
     devices.clear();selected={};
     wchar_t configured[128]{};DWORD configuredBytes=sizeof(configured);
-    const auto configuration=L"SOFTWARE\\Classes\\CLSID\\"+std::wstring(wavo::kClsidText);
+    const auto configuration=L"SOFTWARE\\Classes\\CLSID\\"+std::wstring(micfilter::kClsidText);
     configuredGuid=RegGetValueW(HKEY_LOCAL_MACHINE,configuration.c_str(),L"EndpointGuid",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,configured,&configuredBytes)==ERROR_SUCCESS?configured:L"";
     IMMDeviceEnumerator* enumerator=nullptr;IMMDeviceCollection* collection=nullptr;
     if(FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,__uuidof(IMMDeviceEnumerator),reinterpret_cast<void**>(&enumerator))))return;
@@ -79,18 +80,18 @@ void enumerate(){
                     Device d{id,prop(store,PKEY_Device_FriendlyName),prop(store,PKEY_AudioEndpoint_GUID)};
                     devices.push_back(d);
                     if(!configuredGuid.empty()){if(_wcsicmp(d.guid.c_str(),configuredGuid.c_str())==0)selected=d;}
-                    else if(d.name.find(L"Wavo POD")!=std::wstring::npos)selected=d;
                 }
                 if(store)store->Release();if(id)CoTaskMemFree(id);device->Release();
             }
         }collection->Release();
     }enumerator->Release();
+    if(configuredGuid.empty()&&devices.size()==1)selected=devices.front();
 }
 bool installed(){
     if(selected.guid.empty())return false;
     auto path=L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\"+selected.guid+L"\\FxProperties";
     wchar_t value[128]{};DWORD bytes=sizeof(value);
-    return RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,wavo::kClsidText)==0;
+    return RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,micfilter::kClsidText)==0;
 }
 bool componentizedEndpoint(){
     if(selected.guid.empty())return false;
@@ -98,10 +99,10 @@ bool componentizedEndpoint(){
     wchar_t value[1024]{};DWORD bytes=sizeof(value);
     return RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),L"{9e6136e0-57ab-4949-b57a-3627be142855},100",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&value[0];
 }
-std::wstring telemetryText(wavo::SharedState* p){
-    if(!p||!wavo::read(p->producerPid))return L"Actividad del efecto: no observada.\nFormato del efecto: sin comprobar.\n";
-    std::wstring text=wavo::recentAudio(p)?L"Actividad del efecto: reciente.\nFormato activo: ":L"Actividad del efecto: detenida; datos históricos.\nÚltimo formato: ";
-    text+=std::to_wstring(wavo::read(p->sampleRate))+L" Hz / "+std::to_wstring(wavo::read(p->channels))+L" canales\nBloques procesados por el efecto: "+std::to_wstring(wavo::read(p->callbacks))+L"\nMuestras filtradas: "+std::to_wstring(wavo::read(p->processedFrames))+L"\n";
+std::wstring telemetryText(micfilter::SharedState* p){
+    if(!p||!micfilter::read(p->producerPid))return L"Effect activity: not observed.\nEffect format: not checked.\n";
+    std::wstring text=micfilter::recentAudio(p)?L"Effect activity: recent.\nActive format: ":L"Effect activity: stopped; historical data.\nLast format: ";
+    text+=std::to_wstring(micfilter::read(p->sampleRate))+L" Hz / "+std::to_wstring(micfilter::read(p->channels))+L" channels\nEffect callbacks: "+std::to_wstring(micfilter::read(p->callbacks))+L"\nFiltered frames: "+std::to_wstring(micfilter::read(p->processedFrames))+L"\n";
     return text;
 }
 HICON createIcon(COLORREF color){
@@ -118,25 +119,25 @@ HICON createIcon(COLORREF color){
 void update(){
     if(!mapping.get())mapping.open();
     auto* state=mapping.get();int icon=2;
-    if(installerProcess)status=installerRemoving?L"Restaurando configuración…":L"Instalando efecto…";
-    else if(selected.id.empty())status=L"Micrófono seleccionado desconectado";
-    else if(!installed()){status=L"Audio original; efecto propio sin instalar";icon=1;}
-    else if(!state)status=L"Estado inaccesible; audio original";
-    else if(!wavo::read(state->enabled)){status=L"Audio original";icon=1;}
-    else if(wavo::recentAudio(state)){
-        if(wavo::read(state->formatSupported)){status=L"Filtro confirmado: RNNoise v1.21";icon=0;}
-        else status=L"Formato incompatible; audio original";
-    }else status=wavo::read(state->producerPid)?L"Filtro activado; esperando uso del micrófono":L"Efecto asociado; procesamiento sin confirmar";
-    tray.hIcon=icons[icon];auto tip=L"Wavo Filter - "+status;wcsncpy_s(tray.szTip,tip.c_str(),_TRUNCATE);Shell_NotifyIconW(NIM_MODIFY,&tray);
+    if(installerProcess)status=installerRemoving?L"Restoring configuration...":L"Installing effect...";
+    else if(selected.id.empty())status=L"Selected microphone disconnected";
+    else if(!installed()){status=L"Original audio; effect not installed";icon=1;}
+    else if(!state)status=L"Controls unavailable; original audio";
+    else if(!micfilter::read(state->enabled)){status=L"Original audio";icon=1;}
+    else if(micfilter::recentAudio(state)){
+        if(micfilter::read(state->formatSupported)){status=L"Filter confirmed: RNNoise v1.21";icon=0;}
+        else status=L"Unsupported format; original audio";
+    }else status=micfilter::read(state->producerPid)?L"Filter enabled; waiting for microphone use":L"Effect installed; processing not confirmed";
+    tray.hIcon=icons[icon];auto tip=L"MicFilter - "+status;wcsncpy_s(tray.szTip,tip.c_str(),_TRUNCATE);Shell_NotifyIconW(NIM_MODIFY,&tray);
 }
-void toggle(){if(!installed()||!mapping.get()){MessageBoxW(window,L"Primero instala el efecto en un micrófono ejecutando WavoFilter-Setup.exe.",L"Wavo Filter",MB_OK|MB_ICONINFORMATION);return;}auto* p=mapping.get();InterlockedExchange(&p->enabled,!wavo::read(p->enabled));update();}
+void toggle(){if(!installed()||!mapping.get()){MessageBoxW(window,L"Run MicFilter-Setup.exe to install the effect on a microphone first.",L"MicFilter",MB_OK|MB_ICONINFORMATION);return;}auto* p=mapping.get();InterlockedExchange(&p->enabled,!micfilter::read(p->enabled));update();}
 void installer(bool remove){
     if(installerProcess)return;
-    if(selected.guid.empty()){MessageBoxW(window,L"Conecta el micrófono seleccionado para instalar o retirar su efecto.",L"Wavo Filter",MB_OK);return;}
+    if(selected.guid.empty()){MessageBoxW(window,L"Connect the selected microphone to install or remove its effect.",L"MicFilter",MB_OK);return;}
     const auto dir=executableDirectory();
     const auto logs=logDirectory();
     const int made=logs.empty()?ERROR_PATH_NOT_FOUND:SHCreateDirectoryExW(window,logs.c_str(),nullptr);
-    if(made!=ERROR_SUCCESS&&made!=ERROR_ALREADY_EXISTS&&made!=ERROR_FILE_EXISTS){MessageBoxW(window,L"No se pudo crear la carpeta para guardar el resultado de la instalación.",L"Wavo Filter",MB_OK|MB_ICONERROR);return;}
+    if(made!=ERROR_SUCCESS&&made!=ERROR_ALREADY_EXISTS&&made!=ERROR_FILE_EXISTS){MessageBoxW(window,L"Could not create the folder for the installation report.",L"MicFilter",MB_OK|MB_ICONERROR);return;}
     GUID attempt{};wchar_t attemptText[40]{};if(FAILED(CoCreateGuid(&attempt))||!StringFromGUID2(attempt,attemptText,40))return;
     installerResultPath=logs+L"\\installer-"+attemptText+L".txt";
     lastInstallerLog=logs+L"\\installer-"+attemptText+L".log";
@@ -148,7 +149,7 @@ void installer(bool remove){
     const auto powershell=std::wstring(systemDirectory)+L"\\WindowsPowerShell\\v1.0\\powershell.exe";
     info.lpFile=powershell.c_str();info.lpParameters=args.c_str();info.nShow=SW_HIDE;
     if(ShellExecuteExW(&info)){installerProcess=info.hProcess;installerRemoving=remove;update();}
-    else{const auto error=GetLastError();const auto message=error==ERROR_CANCELLED?L"Instalación cancelada en el aviso de administrador de Windows.":L"No se pudo iniciar el instalador. Error de Windows: "+std::to_wstring(error);MessageBoxW(window,message.c_str(),L"Wavo Filter",MB_OK|MB_ICONINFORMATION);}
+    else{const auto error=GetLastError();const auto message=error==ERROR_CANCELLED?L"Installation cancelled at the Windows administrator prompt.":L"Could not start the installer. Windows error: "+std::to_wstring(error);MessageBoxW(window,message.c_str(),L"MicFilter",MB_OK|MB_ICONINFORMATION);}
 }
 void installerFinished(){
     if(!installerProcess)return;
@@ -158,48 +159,48 @@ void installerFinished(){
     const bool success=code==0&&(installerRemoving?!installed():installed());
     if(success&&!installerRemoving){if(!mapping.get())mapping.open();if(auto* p=mapping.get())InterlockedExchange(&p->enabled,1);update();}
     auto message=readResult(installerResultPath);
-    if(message.empty())message=L"El instalador terminó con código "+std::to_wstring(code)+L" y no generó un informe.\nComprueba que los archivos del programa estén completos.\n\nRegistro esperado: "+lastInstallerLog;
-    else if(code==0&&!success)message=L"El instalador terminó, pero no se confirmó el cambio en el Wavo.\n\n"+message;
-    MessageBoxW(window,message.c_str(),success?L"Wavo Filter - operación completada":L"Wavo Filter - instalación fallida",MB_OK|(success?MB_ICONINFORMATION:MB_ICONERROR));
+    if(message.empty())message=L"The installer exited with code "+std::to_wstring(code)+L" and did not produce a report.\nCheck that all application files are present.\n\nExpected log: "+lastInstallerLog;
+    else if(code==0&&!success)message=L"The installer finished, but the microphone change was not confirmed.\n\n"+message;
+    MessageBoxW(window,message.c_str(),success?L"MicFilter - operation completed":L"MicFilter - installation failed",MB_OK|(success?MB_ICONINFORMATION:MB_ICONERROR));
 }
 void openInstallerLog(){
-    const auto log=latestInstallerLog();if(log.empty()){MessageBoxW(window,L"Todavía no hay registros de instalación.",L"Wavo Filter",MB_OK);return;}
+    const auto log=latestInstallerLog();if(log.empty()){MessageBoxW(window,L"No installation logs are available yet.",L"MicFilter",MB_OK);return;}
     const auto argument=L"\""+log+L"\"";ShellExecuteW(window,L"open",L"notepad.exe",argument.c_str(),nullptr,SW_SHOWNORMAL);
 }
-bool startupEnabled(){DWORD type=0,size=0;return RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",L"WavoFilter",RRF_RT_REG_SZ,&type,nullptr,&size)==ERROR_SUCCESS;}
+bool startupEnabled(){DWORD type=0,size=0;return RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",L"MicFilter",RRF_RT_REG_SZ,&type,nullptr,&size)==ERROR_SUCCESS;}
 void startup(){
     HKEY key=nullptr;if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,nullptr,0,KEY_SET_VALUE,nullptr,&key,nullptr)!=ERROR_SUCCESS)return;
-    if(startupEnabled())RegDeleteValueW(key,L"WavoFilter");
-    else{wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);std::wstring value=L"\""+std::wstring(path)+L"\"";RegSetValueExW(key,L"WavoFilter",0,REG_SZ,reinterpret_cast<const BYTE*>(value.c_str()),static_cast<DWORD>((value.size()+1)*2));}
+    if(startupEnabled())RegDeleteValueW(key,L"MicFilter");
+    else{wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);std::wstring value=L"\""+std::wstring(path)+L"\"";RegSetValueExW(key,L"MicFilter",0,REG_SZ,reinterpret_cast<const BYTE*>(value.c_str()),static_cast<DWORD>((value.size()+1)*2));}
     RegCloseKey(key);
 }
 void details(){
-    update();std::wstring text=L"Estado: "+status+L"\nMicrófono: "+(selected.name.empty()?L"Micrófono no detectado":selected.name)+L"\nMotor: modelo RNNoise de Werman v1.21\n";
+    update();std::wstring text=L"Status: "+status+L"\nMicrophone: "+(selected.name.empty()?L"Microphone not detected":selected.name)+L"\nEngine: RNNoise model from Werman v1.21\n";
     text+=telemetryText(mapping.get());
-    if(!installed())text+=L"\nEl efecto propio está retirado. Puedes instalar la versión corregida desde el menú.";
-    else text+=L"\nUn clic: activar/desactivar. Clic derecho: opciones.\nEl filtro conserva su ajuste tras reiniciar y funciona sin este icono.\nSalir desactiva el filtro; abrir el programa no lo activa.\nAbre una aplicación que use el micrófono para comprobar la actividad del efecto.";
-    const auto log=latestInstallerLog();if(!log.empty())text+=L"\n\nÚltimo registro de instalación:\n"+log;
-    MessageBoxW(window,text.c_str(),L"Wavo Filter - diagnóstico",MB_OK|MB_ICONINFORMATION);
+    if(!installed())text+=L"\nThe effect is not installed. Run MicFilter-Setup.exe to select a microphone.";
+    else text+=L"\nOne click: enable/disable. Right-click: options.\nThe filter keeps its setting after reboot and works without this icon.\nExit disables the filter; opening the app does not enable it.\nOpen an app that uses the microphone to check effect activity.";
+    const auto log=latestInstallerLog();if(!log.empty())text+=L"\n\nLatest installation log:\n"+log;
+    MessageBoxW(window,text.c_str(),L"MicFilter - diagnostics",MB_OK|MB_ICONINFORMATION);
 }
 void menu(){
     update();auto* state=mapping.get();HMENU m=CreatePopupMenu();const bool ready=installed()&&state;
     AppendMenuW(m,MF_STRING|MF_DISABLED,0,status.c_str());AppendMenuW(m,MF_SEPARATOR,0,nullptr);
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED),idToggle,ready&&wavo::read(state->enabled)?L"Desactivar filtro (audio original)":L"Activar filtro");
-    AppendMenuW(m,MF_STRING,idInfo,L"Diagnóstico");
-    AppendMenuW(m,MF_STRING,idInstallerLog,L"Ver registro de instalación");
+    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED),idToggle,ready&&micfilter::read(state->enabled)?L"Disable filter (original audio)":L"Enable filter");
+    AppendMenuW(m,MF_STRING,idInfo,L"Diagnostics");
+    AppendMenuW(m,MF_STRING,idInstallerLog,L"View installation log");
     AppendMenuW(m,MF_SEPARATOR,0,nullptr);
-    const LONG threshold=state?wavo::read(state->thresholdPermille):850;
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==850?MF_CHECKED:0),idReference,L"Perfil: referencia v1.21 (85%)");
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==600?MF_CHECKED:0),idGentle,L"Perfil: detección más permisiva (60%)");
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==0?MF_CHECKED:0),idNoGate,L"Perfil: RNNoise sin silenciamiento adicional");
-    const LONG wet=state?wavo::read(state->wetPermille):1000;
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(wet==1000?MF_CHECKED:0),idWetFull,L"Mezcla: 100% filtrado");
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(wet==850?MF_CHECKED:0),idWetPartial,L"Mezcla: 85% filtrado / 15% original");
+    const LONG threshold=state?micfilter::read(state->thresholdPermille):850;
+    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==850?MF_CHECKED:0),idReference,L"Profile: v1.21 reference (85%)");
+    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==600?MF_CHECKED:0),idGentle,L"Profile: more permissive detection (60%)");
+    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(threshold==0?MF_CHECKED:0),idNoGate,L"Profile: RNNoise without extra gating");
+    const LONG wet=state?micfilter::read(state->wetPermille):1000;
+    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(wet==1000?MF_CHECKED:0),idWetFull,L"Mix: 100% filtered");
+    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED)|(wet==850?MF_CHECKED:0),idWetPartial,L"Mix: 85% filtered / 15% original");
     AppendMenuW(m,MF_SEPARATOR,0,nullptr);
-    AppendMenuW(m,MF_STRING|(selected.guid.empty()||installerProcess?MF_GRAYED:0),idInstall,L"Instalar efecto en micrófono seleccionado…");
-    AppendMenuW(m,MF_STRING|(installed()&&!installerProcess?0:MF_GRAYED),idRemove,L"Retirar efecto y restaurar configuración…");
-    AppendMenuW(m,MF_STRING|(startupEnabled()?MF_CHECKED:0),idStartup,L"Iniciar con Windows");
-    AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idExit,L"Salir (dejar audio original)");
+    AppendMenuW(m,MF_STRING|(selected.guid.empty()||installerProcess?MF_GRAYED:0),idInstall,L"Install effect on selected microphone...");
+    AppendMenuW(m,MF_STRING|(installed()&&!installerProcess?0:MF_GRAYED),idRemove,L"Remove effect and restore configuration...");
+    AppendMenuW(m,MF_STRING|(startupEnabled()?MF_CHECKED:0),idStartup,L"Start with Windows");
+    AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idExit,L"Exit (leave original audio)");
     POINT point{};GetCursorPos(&point);SetForegroundWindow(window);const auto command=TrackPopupMenu(m,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);DestroyMenu(m);
     if(command)PostMessageW(window,WM_COMMAND,command,0);PostMessageW(window,WM_NULL,0,0);Shell_NotifyIconW(NIM_SETFOCUS,&tray);
 }
@@ -222,7 +223,7 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     case trayMessage:{const auto event=LOWORD(lp);if(event==NIN_SELECT||event==NIN_KEYSELECT)toggle();else if(event==WM_CONTEXTMENU)menu();return 0;}
     case WM_TIMER:installerFinished();update();return 0;
     case refreshMessage:enumerate();update();return 0;
-    case wavo::kControlMessage:toggle();return 0;
+    case micfilter::kControlMessage:toggle();return 0;
     case WM_COMMAND:{auto* p=mapping.get();switch(LOWORD(wp)){
         case idToggle:toggle();break;case idInfo:details();break;case idInstallerLog:openInstallerLog();break;case idInstall:installer(false);break;case idRemove:installer(true);break;
         case idStartup:startup();break;case idReference:if(p)InterlockedExchange(&p->thresholdPermille,850);break;
@@ -240,32 +241,32 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int){
     if(argc>1){std::wstring command=argv[1];mapping.open();int result=0;
         if(command==L"--devices"||command==L"--status"){
             std::wostringstream output;for(const auto& d:devices)output<<d.name<<L" | "<<d.guid<<L"\n";
-            output<<L"Micrófono seleccionado detectado: "<<(!selected.id.empty())<<L"\nAPO propio instalado: "<<installed()<<L"\n";
-            output<<L"Asociación a Voice Clarity de Microsoft: "<<componentizedEndpoint()<<L"\n";
-            if(auto* p=mapping.get())output<<L"Activado: "<<wavo::read(p->enabled)<<L"\n";
+            output<<L"Selected microphone detected: "<<(!selected.id.empty())<<L"\nMicFilter APO installed: "<<installed()<<L"\n";
+            output<<L"Microsoft Voice Clarity association: "<<componentizedEndpoint()<<L"\n";
+            if(auto* p=mapping.get())output<<L"Enabled: "<<micfilter::read(p->enabled)<<L"\n";
             output<<telemetryText(mapping.get());
             printUtf8(output.str());
         }else if(command==L"--check-com"){
             checkCom();
         }else if(command==L"--check-audio"||command==L"--probe-audio"){
-            if(selected.id.empty()){printUtf8(L"Micrófono seleccionado no detectado.\n");result=2;}
+            if(selected.id.empty()){printUtf8(L"Selected microphone not detected.\n");result=2;}
             else {std::wstring report;result=FAILED(checkAudio(selected.id,report,command==L"--probe-audio"))?1:0;printUtf8(report);}
         }else if(command==L"--quit"){
-            if(auto existing=FindWindowW(wavo::kWindowClass,nullptr))PostMessageW(existing,WM_CLOSE,0,0);
+            if(auto existing=existingTray())PostMessageW(existing,WM_CLOSE,0,0);
         }else if(command==L"--install"){
-            if(auto existing=FindWindowW(wavo::kWindowClass,nullptr))PostMessageW(existing,WM_COMMAND,idInstall,0);
+            if(auto existing=existingTray())PostMessageW(existing,WM_COMMAND,idInstall,0);
             else result=2;
         }else if(command==L"--enable"||command==L"--disable"||command==L"--toggle"){
             auto* p=mapping.get();if(!p||!installed())result=2;
-            else InterlockedExchange(&p->enabled,command==L"--enable"?1:command==L"--disable"?0:!wavo::read(p->enabled));
+            else InterlockedExchange(&p->enabled,command==L"--enable"?1:command==L"--disable"?0:!micfilter::read(p->enabled));
         }else result=2;
         LocalFree(argv);CoUninitialize();return result;
     }LocalFree(argv);
-    HANDLE singleton=CreateMutexW(nullptr,FALSE,L"Local\\WavoFilter.Tray.v1");
-    if(GetLastError()==ERROR_ALREADY_EXISTS){if(auto existing=FindWindowW(wavo::kWindowClass,nullptr))PostMessageW(existing,wavo::kControlMessage,0,0);CloseHandle(singleton);CoUninitialize();return 0;}
+    HANDLE singleton=CreateMutexW(nullptr,FALSE,L"Local\\MicFilter.Tray.v1");
+    if(GetLastError()==ERROR_ALREADY_EXISTS){if(auto existing=existingTray())PostMessageW(existing,micfilter::kControlMessage,0,0);CloseHandle(singleton);CoUninitialize();return 0;}
     icons[0]=createIcon(RGB(75,210,125));icons[1]=createIcon(RGB(160,165,175));icons[2]=createIcon(RGB(240,180,65));
-    WNDCLASSW cls{};cls.hInstance=instance;cls.lpfnWndProc=procedure;cls.lpszClassName=wavo::kWindowClass;RegisterClassW(&cls);
-    window=CreateWindowExW(0,wavo::kWindowClass,L"Wavo Filter",0,0,0,0,0,nullptr,nullptr,instance,nullptr);
+    WNDCLASSW cls{};cls.hInstance=instance;cls.lpfnWndProc=procedure;cls.lpszClassName=micfilter::kWindowClass;RegisterClassW(&cls);
+    window=CreateWindowExW(0,micfilter::kWindowClass,L"MicFilter",0,0,0,0,0,nullptr,nullptr,instance,nullptr);
     if(!window){CoUninitialize();return 1;}
     taskbarCreated=RegisterWindowMessageW(L"TaskbarCreated");tray.cbSize=sizeof(tray);tray.hWnd=window;tray.uID=1;tray.uFlags=NIF_ICON|NIF_MESSAGE|NIF_TIP|NIF_SHOWTIP;
     tray.uCallbackMessage=trayMessage;tray.hIcon=icons[2];tray.uVersion=NOTIFYICON_VERSION_4;

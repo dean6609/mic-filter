@@ -1,13 +1,23 @@
-# Cambios
+# Changelog
 
-## 0.3.0 — 30 de septiembre de 2026 — preliminar
+## 0.4.0 — 2026-09-30
 
-- Instalador único en C++ con todos los componentes embebidos, consola de progreso, permiso de Windows y acceso al escritorio.
-- Selección de micrófonos activos de cualquier marca; selección automática si solo hay uno.
-- Procesamiento de 8–192 kHz y de 1–8 canales mediante remuestreo interno SpeexDSP y RNNoise a 48 kHz.
-- Conservación del estado al reiniciar y al actualizar. Abrir la bandeja no activa el filtro; salir lo desactiva.
-- Comprobación de captura real sin guardar voz, registros persistentes y restauración ante fallos de captura.
-- Registro APO con una sola interfaz de procesamiento y agregación COM correcta.
-- Pruebas privadas de DSP, formatos, continuidad, COM y paquete; prueba física con Wavo POD y confirmación del usuario.
+- Renamed the project, application and installer to **MicFilter**.
+- English tray controls, installer progress, errors and documentation.
+- A focused README with a visual header, direct download and quick-start guide.
+- Generic endpoint discovery with no microphone-brand preference.
+- Preserved saved controls and restore backups when upgrading older installations.
+- Moved source navigation, architecture and validation details into dedicated documents.
+- A regular release with a single installer asset.
 
-La instalación gestiona un micrófono por equipo. Otros APOs existentes se conservan y los conflictos detienen la instalación. Versión x64 para Intel/AMD, sin firma digital; necesita comprobarse en otros controladores y equipos.
+The RNNoise model and audio processing are unchanged from 0.3.0.
+
+## 0.3.0 — 2026-09-30
+
+- Single-file native installer with embedded components and a desktop shortcut.
+- Active microphone selection and automatic selection for a single input.
+- Internal resampling for 8–192 kHz and 1–8 channels.
+- Persistent enable/disable controls and tray profiles.
+- Capture verification without saving audio, persistent logs and rollback.
+- Correct COM aggregation and registration of one APO processing interface.
+- Isolated DSP, resampling, COM, registry and package tests.

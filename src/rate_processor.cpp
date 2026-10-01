@@ -2,7 +2,7 @@
 #include <cmath>
 #include <cstring>
 
-namespace wavo {
+namespace micfilter {
 RateProcessor::~RateProcessor(){if(to48_)speex_resampler_destroy(to48_);if(from48_)speex_resampler_destroy(from48_);}
 bool RateProcessor::initialize(unsigned channels,unsigned rate){
     if(channels<1||channels>8||rate<8000||rate>192000)return false;
