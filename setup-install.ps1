@@ -2,9 +2,7 @@
 $ErrorActionPreference='Stop'
 $source=$PSScriptRoot
 $endpointText='{'+$EndpointGuid.ToString()+'}'
-$ownClsid='{CDB2B27A-3B40-4B79-95AA-123C7136D873}'
-$legacyClsids=@('{54F530A1-D045-4C70-8999-11CF13E0DDAF}','{6C78EB4F-8AE4-4461-BE4A-989C7C14C7B2}')
-$slot='{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2'
+. (Join-Path $source 'installer-registry.ps1')
 $programDir=Join-Path $env:ProgramFiles 'MicFilter'
 $dataDir=Join-Path $env:ProgramData 'MicFilter'
 if(-not(Test-Path -LiteralPath (Join-Path $dataDir 'state.bin')) -and (Test-Path -LiteralPath (Join-Path $env:ProgramData 'WavoFilter\state.bin'))){$dataDir=Join-Path $env:ProgramData 'WavoFilter'}
@@ -15,7 +13,7 @@ $classPath='HKLM:\SOFTWARE\Classes\CLSID\'+$ownClsid+'\InprocServer32'
 $fxSubKey='SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\'+$endpointText+'\FxProperties'
 $effectsKey=$null;$changed=$false;$complete=$false;$exitCode=1
 $oldControls=$null;$oldSlot=$null;$oldDll=$null;$oldConfig=$null;$oldBackup=$null
-$logPath=$null;$shortcutPath=$null;$shortcutExisted=$false
+$logPath=$null;$createdShortcuts=@()
 function Write-ProgressLine([string]$Message){Write-Host $Message;if($logPath){[IO.File]::AppendAllText($logPath,[DateTime]::Now.ToString('o')+' '+$Message+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))}}
 function Read-State {
     $stream=[IO.File]::Open($statePath,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite)
@@ -33,33 +31,14 @@ function Run-Native([string]$Executable,[string]$Arguments,[string]$Name){
     if($errorText){Write-ProgressLine $errorText};if($text){Write-ProgressLine $text}
     return [pscustomobject]@{Code=$code;Text=$text}
 }
-function Refresh-SelectedDevice {
-    # Restart a USB media function only when its container uniquely matches the selected input.
-    # Other devices are left for a reconnect/reboot, without restarting all Windows audio.
-    $endpointId='SWD\MMDEVAPI\{0.0.1.00000000}.'+$endpointText
-    try{
-        $container=(Get-PnpDeviceProperty -InstanceId $endpointId -KeyName 'DEVPKEY_Device_ContainerId' -ErrorAction Stop).Data
-        $matches=@(Get-PnpDevice -Class Media -PresentOnly | Where-Object InstanceId -Like 'USB\*' | Where-Object {
-            $candidate=Get-PnpDeviceProperty -InstanceId $_.InstanceId -KeyName 'DEVPKEY_Device_ContainerId' -ErrorAction SilentlyContinue
-            $candidate -and $candidate.Data -eq $container
-        })
-        if($matches.Count -eq 1){
-            Write-ProgressLine 'Applying the change to the selected USB device...'
-            $result=& "$env:SystemRoot\System32\pnputil.exe" /restart-device $matches[0].InstanceId 2>&1
-            Write-ProgressLine ($result -join [Environment]::NewLine)
-            if($LASTEXITCODE -eq 0){return $true}
-        }
-    }catch{Write-ProgressLine ('The audio path needs reconnecting or rebooting: '+$_.Exception.Message)}
-    return $false
-}
+function Refresh-SelectedDevice {Restart-CaptureDevice -EndpointText $endpointText -Log {param($Message) Write-ProgressLine $Message}}
 try {
     $administrator=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if(-not $administrator -or -not [Environment]::Is64BitProcess){throw 'Administrator permission and Windows x64 are required.'}
     New-Item -ItemType Directory -Path (Join-Path $dataDir 'logs') -Force | Out-Null
     $logPath=Join-Path $dataDir ('logs\setup-'+[guid]::NewGuid().ToString('N')+'.log')
-    . (Join-Path $source 'installer-registry.ps1')
     $effectsKey=Open-EndpointEffectsKey -SubKey $fxSubKey -CreateIfMissing
-    $oldSlot=$effectsKey.GetValue($slot)
+    $oldSlot=$effectsKey.GetValue($effectSlot)
     if(Test-Path -LiteralPath $statePath){$oldControls=Read-State}
     if(Test-Path -LiteralPath $backupPath){$oldBackup=[IO.File]::ReadAllBytes($backupPath);$backup=Get-Content -LiteralPath $backupPath -Raw -Encoding UTF8 | ConvertFrom-Json;if($backup.EndpointGuid -ne $endpointText){throw 'A filter is installed on another microphone. Remove it from the tray menu, then run this installer to choose another device.'}}
     if(Test-Path -LiteralPath $configPath){$oldConfig=(Get-ItemProperty -LiteralPath $configPath).EndpointGuid}
@@ -93,35 +72,55 @@ try {
     $confirmed=$callbacks -gt 0 -and $filtered -gt 0 -and [BitConverter]::ToInt32($after,32) -eq 1
     Write-ProgressLine ('Capture received. Effect callbacks: '+$callbacks+'; filtered frames: '+$filtered)
     Write-Controls $finalControls
-    Write-ProgressLine '[5/5] Creating the desktop shortcut...'
+    Write-ProgressLine '[5/5] Creating shortcuts and the Windows uninstall entry...'
     $shell=New-Object -ComObject WScript.Shell
-    $shortcutPath=Join-Path ($shell.SpecialFolders.Item('AllUsersDesktop')) 'MicFilter.lnk'
-    $shortcutExisted=Test-Path -LiteralPath $shortcutPath
-    $shortcut=$shell.CreateShortcut($shortcutPath);$shortcut.TargetPath=Join-Path $programDir 'MicFilter.exe';$shortcut.WorkingDirectory=$programDir;$shortcut.Description='Enable or disable microphone noise suppression';$shortcut.Save()
+    foreach($folder in @('AllUsersDesktop','AllUsersPrograms')){
+        $shortcutPath=Join-Path ($shell.SpecialFolders.Item($folder)) 'MicFilter.lnk'
+        if(-not(Test-Path -LiteralPath $shortcutPath)){$createdShortcuts+=$shortcutPath}
+        $shortcut=$shell.CreateShortcut($shortcutPath);$shortcut.TargetPath=Join-Path $programDir 'MicFilter.exe';$shortcut.WorkingDirectory=$programDir;$shortcut.Description='Enable or disable microphone noise suppression';$shortcut.Save()
+    }
     Copy-Item -LiteralPath (Join-Path $source 'GETTING_STARTED.txt') -Destination (Join-Path $programDir 'GETTING_STARTED.txt') -Force
+    # Settings > Apps lists MicFilter and runs its uninstaller from here.
+    New-Item -Path $uninstallKeyPath -Force | Out-Null
+    $exe=Join-Path $programDir 'MicFilter.exe'
+    $sizeKb=[int]((Get-ChildItem -LiteralPath $programDir -File | Measure-Object -Property Length -Sum).Sum/1KB)
+    $entries=@{DisplayName='MicFilter';DisplayVersion=$micFilterVersion;Publisher='MicFilter contributors';InstallLocation=$programDir;DisplayIcon=$exe;UninstallString=('"'+$exe+'" --uninstall');URLInfoAbout='https://github.com/dean6609/mic-filter';HelpLink='https://github.com/dean6609/mic-filter/issues';InstallDate=[DateTime]::Now.ToString('yyyyMMdd')}
+    foreach($entry in $entries.GetEnumerator()){New-ItemProperty -LiteralPath $uninstallKeyPath -Name $entry.Key -Value $entry.Value -PropertyType String -Force | Out-Null}
+    foreach($entry in @{NoModify=1;NoRepair=1;EstimatedSize=$sizeKb}.GetEnumerator()){New-ItemProperty -LiteralPath $uninstallKeyPath -Name $entry.Key -Value $entry.Value -PropertyType DWord -Force | Out-Null}
     $complete=$true;$exitCode=0
-    $legacyShortcut=Join-Path ($shell.SpecialFolders.Item('AllUsersDesktop')) 'Wavo Filter.lnk'
-    if(Test-Path -LiteralPath $legacyShortcut){$oldLink=$shell.CreateShortcut($legacyShortcut);if($oldLink.TargetPath -eq (Join-Path $env:ProgramFiles 'WavoFilter\WavoFilter.exe')){Remove-Item -LiteralPath $legacyShortcut -Force}}
-    $runPath='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    $legacyStartup=Get-ItemProperty -LiteralPath $runPath -Name 'WavoFilter' -ErrorAction SilentlyContinue
-    if($legacyStartup){New-ItemProperty -LiteralPath $runPath -Name 'MicFilter' -Value ('"'+(Join-Path $programDir 'MicFilter.exe')+'"') -PropertyType String -Force | Out-Null;Remove-ItemProperty -LiteralPath $runPath -Name 'WavoFilter'}
+    try{
+        # Housekeeping after a confirmed install; failures here never roll back the filter.
+        $registeredDll=(Get-Item -LiteralPath $classPath).GetValue('')
+        $pending=0
+        foreach($dll in @(Get-ChildItem -LiteralPath $programDir -Filter 'MicFilterAPO-*.dll' -File)){if($dll.FullName -ne $registeredDll){$pending+=Remove-PathOrSchedule -Path $dll.FullName}}
+        $runPath='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+        if(Get-ItemProperty -LiteralPath $runPath -Name 'WavoFilter' -ErrorAction SilentlyContinue){New-ItemProperty -LiteralPath $runPath -Name 'MicFilter' -Value ('"'+$exe+'"') -PropertyType String -Force | Out-Null;Remove-ItemProperty -LiteralPath $runPath -Name 'WavoFilter'}
+        $legacyDir=Join-Path $env:ProgramFiles 'WavoFilter'
+        if(Remove-LegacyRegistrations){
+            $legacyShortcut=Join-Path ($shell.SpecialFolders.Item('AllUsersDesktop')) 'Wavo Filter.lnk'
+            if((Test-Path -LiteralPath $legacyShortcut) -and $shell.CreateShortcut($legacyShortcut).TargetPath -like ($legacyDir+'\*')){Remove-Item -LiteralPath $legacyShortcut -Force}
+            $pending+=Remove-PathOrSchedule -Path $legacyDir
+        }
+        if($pending){Write-ProgressLine ('Older files still in use by Windows audio will be deleted at the next restart: '+$pending)}
+    }catch{Write-ProgressLine ('Cleanup of older files skipped: '+$_.Exception.Message)}
     if($confirmed){Write-ProgressLine 'READY: the filter processed real audio successfully.'}
     else{Write-ProgressLine 'INSTALLED, pending confirmation: reconnect the microphone or restart Windows, then check diagnostics while recording. If "Filter confirmed" does not appear, remove the effect from the tray menu.'}
     if([BitConverter]::ToInt32($finalControls,8)){Write-ProgressLine 'The filter is enabled and will keep this setting after reboot.'}else{Write-ProgressLine 'Previous setting preserved: filter disabled. Open the app and click the tray icon to enable it.'}
-    Write-ProgressLine 'Open MicFilter from the desktop to see its tray icon and options.'
+    Write-ProgressLine 'Open MicFilter from the desktop or Start menu to see its tray icon and options.'
+    Write-ProgressLine 'To uninstall: Settings > Apps > Installed apps > MicFilter > Uninstall.'
     Write-ProgressLine 'One click: enable/disable. Exit: disable and close. Opening the app does not enable it automatically.'
     Write-ProgressLine ('Log: '+$logPath)
 }catch{
     Write-ProgressLine ('ERROR: '+$_.Exception.Message)
     if($changed){
         try{
-            if($oldSlot){Set-EndpointEffect -Key $effectsKey -Name $slot -Value $oldSlot}else{$effectsKey.DeleteValue($slot,$false)}
+            if($oldSlot){Set-EndpointEffect -Key $effectsKey -Name $effectSlot -Value $oldSlot}else{$effectsKey.DeleteValue($effectSlot,$false)}
             if($oldDll){Set-Item -LiteralPath $classPath -Value $oldDll}else{
                 foreach($path in @(('HKLM:\SOFTWARE\Classes\CLSID\'+$ownClsid),('HKLM:\SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\'+$ownClsid))){if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Recurse -Force}}
             }
             if($oldConfig){New-ItemProperty -LiteralPath $configPath -Name 'EndpointGuid' -Value $oldConfig -PropertyType String -Force | Out-Null}else{if(Test-Path -LiteralPath $configPath){Remove-ItemProperty -LiteralPath $configPath -Name 'EndpointGuid' -ErrorAction SilentlyContinue}}
             if($oldBackup){[IO.File]::WriteAllBytes($backupPath,$oldBackup)}elseif(Test-Path -LiteralPath $backupPath){Remove-Item -LiteralPath $backupPath -Force}
-            if($shortcutPath -and -not $shortcutExisted -and (Test-Path -LiteralPath $shortcutPath)){Remove-Item -LiteralPath $shortcutPath -Force}
+            foreach($shortcutPath in $createdShortcuts){if(Test-Path -LiteralPath $shortcutPath){Remove-Item -LiteralPath $shortcutPath -Force}}
             $restored=Refresh-SelectedDevice;Write-ProgressLine 'The previous microphone effect association was restored.'
         }catch{Write-ProgressLine ('Restore error: '+$_.Exception.Message+'. Keep this log and reconnect the microphone.')}
     }

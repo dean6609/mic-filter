@@ -33,6 +33,18 @@ Capture verification checks actual received frames and growth of APO callback/fi
 
 MicFilter 0.4 uses a new COM class identity to prevent cached pre-rename classes from hiding the new DLL. It recognizes the prior two class IDs during upgrade and preserves settings and the original restore backup. Runtime binaries use `%ProgramFiles%\MicFilter`. Fresh installations use `%ProgramData%\MicFilter`; an existing `%ProgramData%\WavoFilter\state.bin` is retained for compatibility if the new state file does not exist. This legacy name is storage compatibility, not microphone selection. Legacy tray windows, startup entries and the old desktop shortcut are handled during upgrade.
 
+Each installed APO is a hash-named copy (`MicFilterAPO-<hash>.dll`) so audiodg.exe never has a loaded DLL overwritten. After a confirmed install, setup deletes the other copies, along with the WavoFilter program folder and class registrations once no endpoint references them. A file Windows audio still holds is queued with `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)`.
+
+## Uninstall
+
+Setup registers `HKLM\...\Uninstall\MicFilter`, whose `UninstallString` is `MicFilter.exe --uninstall`. That command, or **Uninstall MicFilter** in the tray menu, starts `install.ps1 -Action Uninstall` elevated and exits. The script waits for that process, closes any tray instance, then:
+
+1. restores the effect slot on every capture endpoint that holds a MicFilter or WavoFilter class, using the backup for the configured endpoint and clearing the slot elsewhere. Disconnected endpoints keep their registry keys, so they are restored too;
+2. removes the COM/APO registrations (current and legacy) and the Settings > Apps entry, and restarts the matching USB device;
+3. removes shortcuts, startup entries and the program and data folders (current and WavoFilter), queuing held files for deletion at restart.
+
+`MicFilter.exe` removes per-user data (startup entry, `%LOCALAPPDATA%\MicFilter`), because the elevated script may run as a different administrator. `MicFilter-Setup.exe --uninstall` runs the same script from the installer payload if the program folder is damaged. **Remove effect and restore configuration** only detaches one microphone and keeps the application installed.
+
 ## Shared-state ABI
 
 Keep the magic and version fields compatible. Total size: **64 bytes**.

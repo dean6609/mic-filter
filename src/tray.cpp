@@ -9,6 +9,7 @@
 #include <vector>
 #include <iostream>
 #include <sstream>
+#include <filesystem>
 #include "audio_check.h"
 #include "apo_sdk.h"
 
@@ -16,7 +17,7 @@ namespace {
 constexpr UINT trayMessage=WM_APP+1,refreshMessage=WM_APP+2;
 constexpr UINT idToggle=100,idInstall=101,idRemove=102,idExit=103,idInfo=104,idStartup=105;
 constexpr UINT idReference=110,idGentle=111,idNoGate=112,idWetFull=113,idWetPartial=114;
-constexpr UINT idInstallerLog=115;
+constexpr UINT idInstallerLog=115,idUninstall=116;
 struct Device{std::wstring id,name,guid;};
 std::vector<Device> devices;
 Device selected;
@@ -162,6 +163,26 @@ void installerFinished(){
     else if(code==0&&!success)message=L"The installer finished, but the microphone change was not confirmed.\n\n"+message;
     MessageBoxW(window,message.c_str(),success?L"MicFilter - operation completed":L"MicFilter - installation failed",MB_OK|(success?MB_ICONINFORMATION:MB_ICONERROR));
 }
+// Starts the elevated uninstaller (install.ps1 -Action Uninstall). It waits for this process to
+// exit before deleting the program folder, and shows its own result message.
+bool uninstall(HWND owner){
+    if(MessageBoxW(owner,L"Remove MicFilter from this computer?\n\nMicrophones return to their previous configuration. MicFilter files, shortcuts and settings are deleted.",L"Uninstall MicFilter",MB_YESNO|MB_ICONQUESTION|MB_DEFBUTTON2)!=IDYES)return false;
+    const auto args=L"-NoProfile -ExecutionPolicy Bypass -File \""+executableDirectory()+L"\\install.ps1\" -Action Uninstall -ShowResult -WaitForPid "+std::to_wstring(GetCurrentProcessId());
+    wchar_t systemDirectory[32768]{};GetSystemDirectoryW(systemDirectory,32768);
+    const auto powershell=std::wstring(systemDirectory)+L"\\WindowsPowerShell\\v1.0\\powershell.exe";
+    SHELLEXECUTEINFOW info{};info.cbSize=sizeof(info);info.hwnd=owner;info.lpVerb=L"runas";info.lpFile=powershell.c_str();info.lpParameters=args.c_str();info.nShow=SW_HIDE;
+    if(!ShellExecuteExW(&info)){
+        const auto error=GetLastError();
+        if(error!=ERROR_CANCELLED){const auto message=L"Could not start the uninstaller. Windows error: "+std::to_wstring(error);MessageBoxW(owner,message.c_str(),L"MicFilter",MB_OK|MB_ICONERROR);}
+        return false;
+    }
+    // Per-user data. The elevated script runs as the approving administrator, who may be another account.
+    RegDeleteKeyValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",L"MicFilter");
+    RegDeleteKeyValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",L"WavoFilter");
+    const auto logs=logDirectory();
+    if(!logs.empty()){std::error_code ignored;std::filesystem::remove_all(std::filesystem::path(logs).parent_path(),ignored);}
+    return true;
+}
 void openInstallerLog(){
     const auto log=latestInstallerLog();if(log.empty()){MessageBoxW(window,L"No installation logs are available yet.",L"MicFilter",MB_OK);return;}
     const auto argument=L"\""+log+L"\"";ShellExecuteW(window,L"open",L"notepad.exe",argument.c_str(),nullptr,SW_SHOWNORMAL);
@@ -198,6 +219,7 @@ void menu(){
     AppendMenuW(m,MF_SEPARATOR,0,nullptr);
     AppendMenuW(m,MF_STRING|(selected.guid.empty()||installerProcess?MF_GRAYED:0),idInstall,L"Install effect on selected microphone...");
     AppendMenuW(m,MF_STRING|(installed()&&!installerProcess?0:MF_GRAYED),idRemove,L"Remove effect and restore configuration...");
+    AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idUninstall,L"Uninstall MicFilter...");
     AppendMenuW(m,MF_STRING|(startupEnabled()?MF_CHECKED:0),idStartup,L"Start with Windows");
     AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idExit,L"Exit (leave original audio)");
     POINT point{};GetCursorPos(&point);SetForegroundWindow(window);const auto command=TrackPopupMenu(m,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);DestroyMenu(m);
@@ -225,6 +247,7 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     case micfilter::kControlMessage:toggle();return 0;
     case WM_COMMAND:{auto* p=mapping.get();switch(LOWORD(wp)){
         case idToggle:toggle();break;case idInfo:details();break;case idInstallerLog:openInstallerLog();break;case idInstall:installer(false);break;case idRemove:installer(true);break;
+        case idUninstall:if(!installerProcess&&uninstall(hwnd))DestroyWindow(hwnd);break;
         case idStartup:startup();break;case idReference:if(p)InterlockedExchange(&p->thresholdPermille,850);break;
         case idGentle:if(p)InterlockedExchange(&p->thresholdPermille,600);break;case idNoGate:if(p)InterlockedExchange(&p->thresholdPermille,0);break;
         case idWetFull:if(p)InterlockedExchange(&p->wetPermille,1000);break;case idWetPartial:if(p)InterlockedExchange(&p->wetPermille,850);break;
@@ -252,6 +275,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int){
             else {std::wstring report;result=FAILED(checkAudio(selected.id,report,command==L"--probe-audio"))?1:0;printUtf8(report);}
         }else if(command==L"--quit"){
             if(auto existing=existingTray())PostMessageW(existing,WM_CLOSE,0,0);
+        }else if(command==L"--uninstall"){
+            // Used by Settings > Apps. A running tray handles it so it can close itself first.
+            if(auto existing=existingTray())PostMessageW(existing,WM_COMMAND,idUninstall,0);
+            else result=uninstall(nullptr)?0:1;
         }else if(command==L"--install"){
             if(auto existing=existingTray())PostMessageW(existing,WM_COMMAND,idInstall,0);
             else result=2;

@@ -1,18 +1,21 @@
-﻿param(
-    [Parameter(Mandatory=$true)][ValidateSet('Install','Remove')][string]$Action,
-    [Parameter(Mandatory=$true)][guid]$EndpointGuid,
-    [Parameter(Mandatory=$true)][string]$SourceDir,
-    [string]$ResultPath
+﻿# Install: attach the effect to one microphone (EndpointGuid, SourceDir).
+# Remove: restore that microphone and unregister the effect; application files stay.
+# Uninstall: restore every microphone and delete all MicFilter files, shortcuts and registrations.
+param(
+    [Parameter(Mandatory=$true)][ValidateSet('Install','Remove','Uninstall')][string]$Action,
+    [guid]$EndpointGuid,
+    [string]$SourceDir,
+    [string]$ResultPath,
+    [int]$WaitForPid,
+    [switch]$ShowResult
 )
 $ErrorActionPreference='Stop'
-$ownClsid='{CDB2B27A-3B40-4B79-95AA-123C7136D873}'
-$legacyClsids=@('{54F530A1-D045-4C70-8999-11CF13E0DDAF}','{6C78EB4F-8AE4-4461-BE4A-989C7C14C7B2}')
+. (Join-Path $PSScriptRoot 'installer-registry.ps1')
 $knownClownfish='{80E0C6D1-9465-43B2-9BD5-27A3A56CF1B3}'
-$endpointText='{'+$EndpointGuid.ToString()+'}'
-$endpointPath='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\'+$endpointText
-$fxPath=$endpointPath+'\FxProperties'
-$slot='{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2'
+$endpointText=if($EndpointGuid){'{'+$EndpointGuid.ToString()+'}'}else{''}
+$endpointPath=$captureRoot+'\'+$endpointText
 $programDir=Join-Path $env:ProgramFiles 'MicFilter'
+$legacyProgramDir=Join-Path $env:ProgramFiles 'WavoFilter'
 $stateDir=Join-Path $env:ProgramData 'MicFilter'
 if(-not(Test-Path -LiteralPath (Join-Path $stateDir 'state.bin')) -and (Test-Path -LiteralPath (Join-Path $env:ProgramData 'WavoFilter\state.bin'))){$stateDir=Join-Path $env:ProgramData 'WavoFilter'}
 $backupPath=Join-Path $stateDir 'installation.json'
@@ -24,35 +27,86 @@ $step='Preparation'
 $effectsKey=$null
 $logPath=$null
 $exitCode=1
+$resultText=''
 function Write-InstallerLog([string]$Message) {
     Write-Host $Message
     if($logPath){[IO.File]::AppendAllText($logPath,([DateTime]::Now.ToString('o')+' '+$Message+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))}
 }
 function Write-InstallerResult([string]$Message) {
+    $script:resultText=$Message
     if($ResultPath){[IO.File]::WriteAllText($ResultPath,$Message,[Text.UTF8Encoding]::new($false))}
 }
 function Restore-Slot($backup) {
-    $currentValue=$effectsKey.GetValue($slot)
+    $currentValue=$effectsKey.GetValue($effectSlot)
     $canRestorePrevious=$backup.HadSlot
     if($backup.PreviousSlot -eq $knownClownfish -and -not(Test-Path -LiteralPath ('HKLM:\SOFTWARE\Classes\CLSID\'+$knownClownfish+'\InprocServer32'))){$canRestorePrevious=$false}
     $expectedPrevious=if($canRestorePrevious){$backup.PreviousSlot}else{$null}
     if($currentValue -eq $ownClsid -or $legacyClsids -contains $currentValue) {
-        if($canRestorePrevious){Set-EndpointEffect -Key $effectsKey -Name $slot -Value $backup.PreviousSlot}
-        else{$effectsKey.DeleteValue($slot,$false)}
+        if($canRestorePrevious){Set-EndpointEffect -Key $effectsKey -Name $effectSlot -Value $backup.PreviousSlot}
+        else{$effectsKey.DeleteValue($effectSlot,$false)}
     } elseif($currentValue -ne $expectedPrevious) {throw 'Another application changed the device effect. Its configuration will not be overwritten.'}
 }
 try {
+    if(-not $ResultPath -and $Action -eq 'Uninstall'){$ResultPath=Join-Path $env:TEMP ('MicFilter-uninstall-'+[guid]::NewGuid().ToString('N')+'.txt')}
     if(-not $ResultPath){
         $logDirectory=Join-Path $env:LOCALAPPDATA 'MicFilter\logs'
         New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
         $ResultPath=Join-Path $logDirectory ('installer-'+[guid]::NewGuid().ToString()+'.txt')
     }
     $logPath=[IO.Path]::ChangeExtension($ResultPath,'.log')
-    Write-InstallerLog ('Started: '+$Action+'; microphone '+$endpointText)
-    . (Join-Path $PSScriptRoot 'installer-registry.ps1')
+    Write-InstallerLog ('Started: '+$Action+' '+$micFilterVersion)
     $step='Check administrator permissions'
     if(-not $adminCheck.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Windows requires running the installer as administrator.'}
     if(-not [Environment]::Is64BitProcess){throw '64-bit PowerShell is required.'}
+    if($Action -eq 'Uninstall'){
+        if($WaitForPid){
+            $step='Wait for MicFilter to close'
+            Wait-Process -Id $WaitForPid -Timeout 30 -ErrorAction SilentlyContinue
+        }
+        $step='Close MicFilter'
+        $tray=Join-Path $programDir 'MicFilter.exe'
+        if((Get-Process -Name MicFilter -ErrorAction SilentlyContinue) -and (Test-Path -LiteralPath $tray)){
+            Start-Process -FilePath $tray -ArgumentList '--quit' -Wait -WindowStyle Hidden
+            for($i=0;$i -lt 30 -and (Get-Process -Name MicFilter -ErrorAction SilentlyContinue);$i++){Start-Sleep -Milliseconds 100}
+        }
+        Get-Process -Name MicFilter,WavoFilter -ErrorAction SilentlyContinue | Stop-Process -Force
+        $step='Restore microphone configuration'
+        $backup=if(Test-Path -LiteralPath $backupPath){Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json}else{$null}
+        $restoredEndpoints=@()
+        foreach($entry in @(Get-CaptureEffectSlots)){
+            $effectsKey=Open-EndpointEffectsKey -SubKey ('SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\'+$entry.EndpointText+'\FxProperties')
+            try{if($backup -and $backup.EndpointGuid -eq $entry.EndpointText){Restore-Slot $backup}else{$effectsKey.DeleteValue($effectSlot,$false)}}
+            finally{$effectsKey.Dispose();$effectsKey=$null}
+            Write-InstallerLog ('Microphone effect restored: '+$entry.EndpointText)
+            $restoredEndpoints+=$entry.EndpointText
+        }
+        $step='Remove registration'
+        foreach($path in @($classPath,$apoPath,$uninstallKeyPath)){if(Test-Path -LiteralPath $path){Remove-Item -LiteralPath $path -Recurse -Force}}
+        $null=Remove-LegacyRegistrations
+        $step='Apply the change to the microphone'
+        $applied=$true
+        foreach($endpoint in $restoredEndpoints){if(-not(Restart-CaptureDevice -EndpointText $endpoint -Log {param($Message) Write-InstallerLog $Message})){$applied=$false}}
+        $step='Remove shortcuts and startup entries'
+        $shell=New-Object -ComObject WScript.Shell
+        foreach($folder in @('AllUsersDesktop','AllUsersPrograms')){
+            $links=$shell.SpecialFolders.Item($folder)
+            $link=Join-Path $links 'MicFilter.lnk';if(Test-Path -LiteralPath $link){Remove-Item -LiteralPath $link -Force}
+            $link=Join-Path $links 'Wavo Filter.lnk';if((Test-Path -LiteralPath $link) -and $shell.CreateShortcut($link).TargetPath -like ($legacyProgramDir+'\*')){Remove-Item -LiteralPath $link -Force}
+        }
+        foreach($name in @('MicFilter','WavoFilter')){Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $name -ErrorAction SilentlyContinue}
+        $step='Delete files'
+        $pending=0
+        foreach($directory in @($programDir,$legacyProgramDir,(Join-Path $env:ProgramData 'MicFilter'),(Join-Path $env:ProgramData 'WavoFilter'))){$pending+=Remove-PathOrSchedule -Path $directory}
+        Write-InstallerLog ('Uninstall completed; entries deleted at restart: '+$pending)
+        $message='MicFilter was removed from this computer.'+[Environment]::NewLine+'Microphones use their previous configuration.'
+        if($pending){$message+=[Environment]::NewLine+[Environment]::NewLine+'Some files are still in use by Windows audio. They will be deleted when you restart Windows.'}
+        elseif(-not $applied){$message+=[Environment]::NewLine+[Environment]::NewLine+'Reconnect the microphone or restart Windows to finish.'}
+        Write-InstallerResult $message
+        $exitCode=0
+        return # The finally block still shows the result.
+    }
+    if(-not $EndpointGuid -or $EndpointGuid -eq [guid]::Empty){throw 'A microphone identifier is required.'}
+    Write-InstallerLog ('Microphone: '+$endpointText)
     $step='Open microphone configuration'
     if(-not(Test-Path -LiteralPath $endpointPath)){throw 'The selected device no longer exists.'}
     $fxSubKey='SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\'+$endpointText+'\FxProperties'
@@ -75,9 +129,10 @@ try {
         Write-InstallerResult ('Effect removed and previous configuration restored.'+[Environment]::NewLine+'Reconnect the microphone or restart Windows to apply the change.'+[Environment]::NewLine+[Environment]::NewLine+'Log: '+$logPath)
     } else {
         $step='Check files and effect chain'
+        if(-not $SourceDir){throw 'A source folder is required.'}
         $sourceRoot=(Resolve-Path -LiteralPath $SourceDir).Path
         foreach($name in @('MicFilter.exe','MicFilterAPO.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){if(-not(Test-Path -LiteralPath (Join-Path $sourceRoot $name))){throw ('Missing '+$name)}}
-        $previousValue=$effectsKey.GetValue($slot)
+        $previousValue=$effectsKey.GetValue($effectSlot)
         if($previousValue -and $previousValue -ne $knownClownfish -and $previousValue -ne $ownClsid -and $legacyClsids -notcontains $previousValue){throw 'This microphone has another effect in this chain position. It is preserved rather than replaced.'}
         foreach($otherSlot in @(1,5,6,7)){
             $otherName='{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},'+$otherSlot
@@ -131,19 +186,20 @@ try {
             Set-Item -LiteralPath ($classPath+'\InprocServer32') -Value $dllDestination
             New-ItemProperty -LiteralPath ($classPath+'\InprocServer32') -Name 'ThreadingModel' -PropertyType String -Value 'Both' -Force | Out-Null
             New-Item -Path $apoPath -Force | Out-Null
-            $props=@{Flags=15;MajorVersion=0;MinorVersion=4;MinInputConnections=1;MaxInputConnections=1;MinOutputConnections=1;MaxOutputConnections=1;MaxInstances=[uint32]::MaxValue;NumAPOInterfaces=1}
+            $version=[version]$micFilterVersion
+            $props=@{Flags=15;MajorVersion=$version.Major;MinorVersion=$version.Minor;MinInputConnections=1;MaxInputConnections=1;MinOutputConnections=1;MaxOutputConnections=1;MaxInstances=[uint32]::MaxValue;NumAPOInterfaces=1}
             foreach($entry in $props.GetEnumerator()){New-ItemProperty -LiteralPath $apoPath -Name $entry.Key -Value $entry.Value -PropertyType DWord -Force | Out-Null}
             New-ItemProperty -LiteralPath $apoPath -Name 'FriendlyName' -Value 'MicFilter - RNNoise v1.21' -PropertyType String -Force | Out-Null
             New-ItemProperty -LiteralPath $apoPath -Name 'Copyright' -Value 'GPL-3.0; RNNoise Xiph.Org BSD-3-Clause' -PropertyType String -Force | Out-Null
             $interfaces=@('{FD7F2B29-24D0-4B5C-B177-592C39F9CA10}')
             for($i=0;$i -lt $interfaces.Count;$i++){New-ItemProperty -LiteralPath $apoPath -Name ('APOInterface'+$i) -Value $interfaces[$i] -PropertyType String -Force | Out-Null}
             $step='Attach effect to microphone'
-            Set-EndpointEffect -Key $effectsKey -Name $slot -Value $ownClsid
+            Set-EndpointEffect -Key $effectsKey -Name $effectSlot -Value $ownClsid
             New-ItemProperty -LiteralPath $configPath -Name 'EndpointGuid' -Value $endpointText -PropertyType String -Force | Out-Null
         }catch{
             $installError=$_
             try{
-                if($previousValue){Set-EndpointEffect -Key $effectsKey -Name $slot -Value $previousValue}else{$effectsKey.DeleteValue($slot,$false)}
+                if($previousValue){Set-EndpointEffect -Key $effectsKey -Name $effectSlot -Value $previousValue}else{$effectsKey.DeleteValue($effectSlot,$false)}
                 if($oldDllPath){Set-Item -LiteralPath ($classPath+'\InprocServer32') -Value $oldDllPath}
                 else{if(Test-Path -LiteralPath $classPath){Remove-Item -LiteralPath $classPath -Recurse -Force};if(Test-Path -LiteralPath $apoPath){Remove-Item -LiteralPath $apoPath -Recurse -Force}}
                 Write-InstallerLog 'The previous effect was preserved or restored.'
@@ -162,5 +218,11 @@ try {
         Write-InstallerLog ($failure | Out-String)
         Write-InstallerResult ($failureMessage+[Environment]::NewLine+[Environment]::NewLine+'Log: '+$logPath)
     }catch{Write-Host $failureMessage -ForegroundColor Red}
-}finally{if($effectsKey){$effectsKey.Dispose()}}
+}finally{
+    if($effectsKey){$effectsKey.Dispose()}
+    if($ShowResult -and $resultText){
+        $icon=if($exitCode -eq 0){0x40}else{0x10}
+        $null=(New-Object -ComObject WScript.Shell).Popup($resultText,0,'MicFilter',$icon -bor 0x40000)
+    }
+}
 exit $exitCode

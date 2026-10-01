@@ -17,9 +17,9 @@ Use `-OutputDirectory dist-dev` with `build.ps1`, followed by `package.ps1 -Dist
 | File | Responsibility |
 | --- | --- |
 | `src/setup.cpp` | Single-file bootstrap, active endpoint enumeration, selection, elevation, protected extraction. |
-| `setup-install.ps1` | Installation transaction, real capture probe, desktop shortcut, rollback. |
-| `install.ps1` | Targeted registry association, backup, COM/APO registration, control-file access. |
-| `installer-registry.ps1` | Minimum registry rights and exact effect-value updates. |
+| `setup-install.ps1` | Installation transaction, real capture probe, shortcuts, Settings > Apps entry, rollback, cleanup of older files. |
+| `install.ps1` | `Install`/`Remove` for one microphone (registry association, backup, COM/APO registration, control file) and full `Uninstall`. |
+| `installer-registry.ps1` | Shared version and IDs, minimum registry rights, exact effect-value updates, device restart, delete-or-schedule-at-restart. |
 | `src/tray.cpp` | Tray controls, selected endpoint, diagnostics and command-line control. |
 | `src/shared.h` | Stable 64-byte control/telemetry ABI. |
 | `src/apo.cpp` | COM aggregation, APO lifecycle, negotiation and audio callbacks. |
