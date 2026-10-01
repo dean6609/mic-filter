@@ -1,4 +1,4 @@
-﻿param([switch]$RunTests,[string]$OutputDirectory,[switch]$DiagnosticBuild)
+﻿param([switch]$RunTests,[string]$OutputDirectory)
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot
 $compilerFolder=Get-ChildItem -LiteralPath (Join-Path $root 'tools') -Directory -Filter 'llvm-mingw-*' | Select-Object -First 1
@@ -9,7 +9,7 @@ $rn=Join-Path $root 'vendor\rnnoise'
 $output=if($OutputDirectory){[IO.Path]::GetFullPath($OutputDirectory)}else{Join-Path $root 'dist'}
 $objects=Join-Path $root 'build'
 New-Item -ItemType Directory -Path $output,$objects -Force | Out-Null
-$common=@('-O2','-DNDEBUG','-DUNICODE','-D_UNICODE','-D_WIN32_WINNT=0x0A00','-fms-extensions','-D__REQUIRED_RPCNDR_H_VERSION__=475',('-I'+(Join-Path $root 'vendor\sdk')),('-I'+(Join-Path $rn 'include')),('-I'+(Join-Path $root 'src')))
+$common=@('-O2','-DNDEBUG','-DUNICODE','-D_UNICODE','-D_WIN32_WINNT=0x0A00','-fms-extensions',('-I'+(Join-Path $rn 'include')),('-I'+(Join-Path $root 'src')))
 $rnSources=@('celt_lpc','denoise','kiss_fft','nnet','nnet_default','parse_lpcnet_weights','pitch','rnn','rnnoise_tables','rnnoise_data')
 $rnObjects=@()
 $resampler=Join-Path $root 'vendor\speex-resampler'
@@ -33,11 +33,6 @@ foreach($file in @('x86cpu','x86_dnn_map','nnet_avx2','nnet_sse4_1')){
 $cppFlags=@('-std=c++20','-Wall','-Wextra','-Wno-unknown-pragmas','-static')
 & $cxx @common @cppFlags '-shared' (Join-Path $root 'src\apo.cpp') (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\rate_processor.cpp') (Join-Path $root 'src\apo.def') @rnObjects '-lole32' '-luuid' '-ladvapi32' '-o' (Join-Path $output 'MicFilterAPO.dll')
 if($LASTEXITCODE -ne 0){throw 'Could not compile APO'}
-Copy-Item -LiteralPath (Join-Path $output 'MicFilterAPO.dll') -Destination (Join-Path $output 'MicFilterAPO-v4.dll') -Force
-if($DiagnosticBuild){
-    & $cxx @common @cppFlags '-DMICFILTER_DIAGNOSTIC_CLSID' '-shared' (Join-Path $root 'src\apo.cpp') (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\rate_processor.cpp') (Join-Path $root 'src\apo.def') @rnObjects '-lole32' '-luuid' '-ladvapi32' '-o' (Join-Path $output 'MicFilterDiagnosticAPO.dll')
-    if($LASTEXITCODE -ne 0){throw 'Could not compile diagnostic APO'}
-}
 & $cxx @common @cppFlags '-municode' '-mwindows' (Join-Path $root 'src\tray.cpp') '-lole32' '-luuid' '-lshell32' '-lpropsys' '-ladvapi32' '-lgdi32' '-luser32' '-o' (Join-Path $output 'MicFilter.exe')
 if($LASTEXITCODE -ne 0){throw 'Could not compile the tray application'}
 & $cxx @common @cppFlags (Join-Path $root 'tests\tests.cpp') (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\rate_processor.cpp') @rnObjects '-lole32' '-luuid' '-o' (Join-Path $output 'MicFilterTests.exe')

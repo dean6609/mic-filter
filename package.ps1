@@ -6,7 +6,7 @@ if(-not $compiler){throw 'Portable compiler is missing.'}
 $packageBuild=Join-Path $root 'build\package'
 New-Item -ItemType Directory -Path $packageBuild -Force | Out-Null
 foreach($name in @('setup-install.ps1','GETTING_STARTED.txt')){[IO.File]::WriteAllText((Join-Path $distribution $name),(Get-Content -LiteralPath (Join-Path $root $name) -Raw -Encoding UTF8),[Text.UTF8Encoding]::new($true))}
-$files=@('MicFilter.exe','MicFilterAPO-v4.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt','setup-install.ps1','GETTING_STARTED.txt')
+$files=@('MicFilter.exe','MicFilterAPO.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt','setup-install.ps1','GETTING_STARTED.txt')
 $resourceLines=@('#include <windows.h>',('1 RT_MANIFEST "'+((Join-Path $root 'src\setup.manifest') -replace '\\','/')+'"'))
 for($i=0;$i -lt $files.Count;$i++){$path=Join-Path $distribution $files[$i];if(-not(Test-Path -LiteralPath $path)){throw ('Missing '+$files[$i])};$resourceLines+=(($i+101).ToString()+' RCDATA "'+($path -replace '\\','/')+'"')}
 $rc=Join-Path $packageBuild 'setup.rc';[IO.File]::WriteAllLines($rc,$resourceLines,[Text.UTF8Encoding]::new($false))
