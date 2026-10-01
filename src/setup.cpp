@@ -17,6 +17,18 @@
 #include "audio_check.h"
 
 namespace {
+constexpr wchar_t kVersion[]=L"0.5.3";
+constexpr WORD kGreen=FOREGROUND_GREEN|FOREGROUND_INTENSITY;
+constexpr WORD kRed=FOREGROUND_RED|FOREGROUND_INTENSITY,kGray=FOREGROUND_INTENSITY,kWhite=FOREGROUND_RED|FOREGROUND_GREEN|FOREGROUND_BLUE|FOREGROUND_INTENSITY;
+// Console output is for people: short colored lines. setup-install.ps1 uses the same layout.
+void colored(WORD color,const std::wstring& text){
+    HANDLE out=GetStdHandle(STD_OUTPUT_HANDLE);CONSOLE_SCREEN_BUFFER_INFO info{};const bool console=GetConsoleScreenBufferInfo(out,&info)!=0;
+    std::wcout<<std::flush;if(console)SetConsoleTextAttribute(out,color);std::wcout<<text<<std::flush;if(console)SetConsoleTextAttribute(out,info.wAttributes);
+}
+void step(const wchar_t* mark,WORD color,const std::wstring& text){colored(color,mark);std::wcout<<text<<L"\n"<<std::flush;}
+void ok(const std::wstring& text){step(L"  OK  ",kGreen,text);}
+void failed(const std::wstring& text){step(L"  X   ",kRed,text);}
+void detail(const std::wstring& text){colored(kGray,text);}
 struct Payload {WORD id;const wchar_t* name;};
 constexpr Payload payloads[]={{101,L"MicFilter.exe"},{102,L"MicFilterAPO.dll"},{103,L"install.ps1"},{104,L"installer-registry.ps1"},{105,L"LICENSE"},{106,L"RNNOISE-LICENSE.txt"},{107,L"SPEEX-LICENSE.txt"},{108,L"setup-install.ps1"},{109,L"GETTING_STARTED.txt"}};
 struct Device {std::wstring id,name,guid;};
@@ -41,8 +53,8 @@ void extract(const std::wstring& directory){
 }
 int elevate(const std::wstring& arguments){
     wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);SHELLEXECUTEINFOW launch{};launch.cbSize=sizeof(launch);launch.fMask=SEE_MASK_NOCLOSEPROCESS;launch.lpVerb=L"runas";launch.lpFile=path;launch.lpParameters=arguments.c_str();launch.nShow=SW_SHOWNORMAL;
-    std::wcout<<L"Windows will request administrator permission to install the effect.\n"<<std::flush;
-    if(!ShellExecuteExW(&launch)){std::wcout<<L"Installation did not start. Cancelling the permission prompt leaves the microphone unchanged.\n";return 1;}
+    std::wcout<<L"  Windows will ask for administrator permission.\n"<<std::flush;
+    if(!ShellExecuteExW(&launch)){failed(L"Setup did not start. Your microphone was not changed.");return 1;}
     const auto console=GetConsoleWindow();if(console)ShowWindow(console,SW_HIDE);
     WaitForSingleObject(launch.hProcess,INFINITE);DWORD code=1;GetExitCodeProcess(launch.hProcess,&code);CloseHandle(launch.hProcess);return static_cast<int>(code);
 }
@@ -59,7 +71,7 @@ int runScript(const std::wstring& staging,const std::wstring& scriptAndArguments
     STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION process{};
     if(!CreateProcessW(powershell.c_str(),command.data(),nullptr,nullptr,TRUE,0,nullptr,staging.c_str(),&startup,&process))throw std::runtime_error("Could not start the installation script.");WaitForSingleObject(process.hProcess,INFINITE);DWORD code=1;GetExitCodeProcess(process.hProcess,&code);CloseHandle(process.hThread);CloseHandle(process.hProcess);return static_cast<int>(code);
 }
-void pause(){std::wcout<<L"\nPress Enter to close.\n"<<std::flush;std::wstring ignored;std::getline(std::wcin,ignored);}
+void pause(){detail(L"\n  Press Enter to close.\n");std::wstring ignored;std::getline(std::wcin,ignored);}
 }
 int wmain(int argc,wchar_t** argv){
     // Windows PowerShell 5.1 must build its own module path; one inherited from PowerShell 7 breaks cmdlet loading.
@@ -77,38 +89,34 @@ int wmain(int argc,wchar_t** argv){
             for(const auto& entry:payloads){const auto path=staging+L"\\"+entry.name;if(std::filesystem::file_size(path)==0)throw std::runtime_error("Empty resource.");if(entry.id<=102){HANDLE file=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);char magic[2]{};DWORD bytes=0;const auto ok=ReadFile(file,magic,2,&bytes,nullptr);CloseHandle(file);if(!ok||bytes!=2||magic[0]!='M'||magic[1]!='Z')throw std::runtime_error("Invalid embedded binary.");}}
             std::wcout<<L"PASS package: 9 resources extracted; valid EXE/DLL; no microphone installation or changes.\n";result=0;
         }else if(uninstall){
-            std::wcout<<L"MICFILTER 0.5.3 - uninstall\n\nRestoring microphones and deleting MicFilter files...\n"<<std::flush;
+            colored(kWhite,std::wstring(L"\n  MicFilter ")+kVersion+L" - uninstall\n\n");
+            detail(L"  Removing MicFilter and restoring your microphone...\n");
             staging=createStaging();ownsStaging=true;extract(staging);
-            result=runScript(staging,L"install.ps1\" -Action Uninstall");
-            std::wcout<<(result==0?L"\nMicFilter was removed. Restart Windows if a message above mentions files in use.\n":L"\nUninstall did not complete. See the messages above.\n");
+            result=runScript(staging,L"install.ps1\" -Action Uninstall -Quiet -ShowResult");
+            if(result==0)ok(L"MicFilter was removed.");else failed(L"Uninstall did not complete. The message window explains why.");
         }else{
-            auto devices=microphones();if(devices.empty())throw std::runtime_error("No enabled, connected microphones found. Connect one and run the installer again.");
+            auto devices=microphones();if(devices.empty())throw std::runtime_error("No microphone found. Connect one, make sure it is enabled in Windows, and run setup again.");
             if(list){for(const auto& d:devices)std::wcout<<d.name<<L" | "<<d.guid<<L"\n";result=0;}
             else{
-                std::wcout<<L"MICFILTER 0.5.3 - native microphone noise suppression\n\n"
-                    L"RNNoise will be installed in Windows for the selected microphone.\n"
-                    L"The model is included: no audio host or internet connection is needed.\n"
-                    L"The first installation enables the filter. Rebooting preserves its state.\n"
-                    L"It works without opening the app. Use the desktop shortcut to control it.\n"
-                    L"Click the tray icon to enable/disable. Exit disables the filter.\n"
-                    L"Opening the app later does NOT enable the filter by itself.\n"
-                    L"Installation checks capture without saving your voice.\n"
-                    L"Close applications currently using the microphone.\n\n";
+                colored(kWhite,std::wstring(L"\n  MicFilter ")+kVersion+L"\n");
+                detail(L"  Noise suppression for your microphone. Nothing is recorded or uploaded.\n\n");
                 size_t choice=0;
                 if(!requested.empty()){bool found=false;for(size_t i=0;i<devices.size();++i)if(_wcsicmp(devices[i].guid.c_str(),requested.c_str())==0){choice=i;found=true;break;}if(!found)throw std::runtime_error("The requested microphone is not enabled and connected.");}
                 else if(devices.size()>1){
-                    for(size_t i=0;i<devices.size();++i)std::wcout<<i+1<<L". "<<devices[i].name<<L"\n";
-                    for(;;){std::wcout<<L"\nChoose the microphone number (0 cancels): "<<std::flush;std::wstring input;if(!std::getline(std::wcin,input))throw std::runtime_error("Selection cancelled.");try{size_t used=0;const auto number=std::stoul(input,&used);if(used!=input.size()||number>devices.size())continue;if(!number)throw std::runtime_error("Selection cancelled.");choice=number-1;break;}catch(const std::invalid_argument&){}catch(const std::out_of_range&){}}
+                    std::wcout<<L"  Which microphone should MicFilter clean up?\n\n";
+                    for(size_t i=0;i<devices.size();++i)std::wcout<<L"    "<<i+1<<L". "<<devices[i].name<<L"\n";
+                    for(;;){std::wcout<<L"\n  Type its number and press Enter (0 cancels): "<<std::flush;std::wstring input;if(!std::getline(std::wcin,input))throw std::runtime_error("Cancelled. Nothing was changed.");try{size_t used=0;const auto number=std::stoul(input,&used);if(used!=input.size()||number>devices.size())continue;if(!number)throw std::runtime_error("Cancelled. Nothing was changed.");choice=number-1;break;}catch(const std::invalid_argument&){}catch(const std::out_of_range&){}}
                 }
-                const auto& selected=devices[choice];std::wcout<<L"\nMicrophone: "<<selected.name<<L"\n[1/5] Checking Windows audio capture...\n"<<std::flush;
-                std::wstring report;bool compatible=false;if(FAILED(checkAudio(selected.id,report,false,&compatible))){std::wcout<<report;throw std::runtime_error("Cannot open this microphone. Check permissions or close other applications.");}
-                if(!compatible){std::wcout<<report;throw std::runtime_error("Unsupported format. Supports 1-8 channels at 8-192 kHz in the Windows float engine. The filter was not installed.");}
-                std::wcout<<report<<L"\n[2/5] Preparing embedded components...\n"<<std::flush;
+                const auto& selected=devices[choice];std::wcout<<L"\n  Microphone: "<<selected.name<<L"\n\n"<<std::flush;
+                std::wstring report;bool compatible=false;
+                if(FAILED(checkAudio(selected.id,report,false,&compatible))){detail(report);throw std::runtime_error("Windows could not open this microphone. Close apps that are using it, check microphone permissions in Settings > Privacy, and try again.");}
+                if(!compatible){detail(report);throw std::runtime_error("This microphone uses an audio format MicFilter does not support (1-8 channels, 8-192 kHz). Nothing was changed.");}
+                ok(L"Microphone ready");
                 staging=createStaging();ownsStaging=true;extract(staging);
                 result=runScript(staging,L"setup-install.ps1\" -EndpointGuid "+selected.guid);
             }
         }
-    }catch(const std::exception& error){const std::string text=error.what();std::wcerr<<L"\nInstallation did not complete: "<<std::wstring(text.begin(),text.end())<<L"\n";result=1;}
+    }catch(const std::exception& error){const std::string text=error.what();std::wcout<<L"\n";failed(std::wstring(text.begin(),text.end()));result=1;}
     // Only this process's newly created, unpredictable directory is removed.
     if(ownsStaging){std::error_code error;std::filesystem::remove_all(staging,error);if(error)std::wcerr<<L"Could not clean up the staging folder: "<<staging<<L"\n";}
     CoUninitialize();if(!noPause&&!selfTest&&!list)pause();return result;

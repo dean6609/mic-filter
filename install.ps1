@@ -7,7 +7,8 @@ param(
     [string]$SourceDir,
     [string]$ResultPath,
     [int]$WaitForPid,
-    [switch]$ShowResult
+    [switch]$ShowResult,
+    [switch]$Quiet  # log only; the caller shows its own progress
 )
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'installer-registry.ps1')
@@ -29,7 +30,7 @@ $logPath=$null
 $exitCode=1
 $resultText=''
 function Write-InstallerLog([string]$Message) {
-    Write-Host $Message
+    if(-not $Quiet){Write-Host $Message}
     if($logPath){[IO.File]::AppendAllText($logPath,([DateTime]::Now.ToString('o')+' '+$Message+[Environment]::NewLine),[Text.UTF8Encoding]::new($false))}
 }
 function Write-InstallerResult([string]$Message) {
@@ -137,16 +138,16 @@ try {
         $sourceRoot=(Resolve-Path -LiteralPath $SourceDir).Path
         foreach($name in @('MicFilter.exe','MicFilterAPO.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){if(-not(Test-Path -LiteralPath (Join-Path $sourceRoot $name))){throw ('Missing '+$name)}}
         $previousValue=$effectsKey.GetValue($effectSlot)
-        if($previousValue -and $previousValue -ne $knownClownfish -and $previousValue -ne $ownClsid -and $legacyClsids -notcontains $previousValue){throw 'This microphone has another effect in this chain position. It is preserved rather than replaced.'}
+        if($previousValue -and $previousValue -ne $knownClownfish -and $previousValue -ne $ownClsid -and $legacyClsids -notcontains $previousValue){throw 'This microphone already uses another audio effect, which MicFilter does not replace.'}
         foreach($otherSlot in @(1,5,6,7)){
             $otherName='{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},'+$otherSlot
-            if($effectsKey.GetValue($otherName)){throw 'Another audio effect was detected; review the chain first to avoid double filtering.'}
+            if($effectsKey.GetValue($otherName)){throw 'This microphone already uses other audio effects (for example manufacturer enhancements). MicFilter was not installed to avoid filtering twice.'}
         }
         $step='Save restore backup'
         New-Item -ItemType Directory -Path $stateDir,$programDir -Force | Out-Null
         if(Test-Path -LiteralPath $backupPath){
             $backup=Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
-            if($backup.EndpointGuid -ne $endpointText){throw 'A filter is installed on another microphone. Remove it from the tray menu before choosing another device.'}
+            if($backup.EndpointGuid -ne $endpointText){throw 'MicFilter is already set up on another microphone. Right-click the MicFilter icon, choose "Remove effect and restore configuration", then try again.'}
         }else{
             $backup=[pscustomobject]@{EndpointGuid=$endpointText;HadSlot=[bool]$previousValue;PreviousSlot=$previousValue;CreatedUtc=[DateTime]::UtcNow.ToString('o');SourceRelease='werman/v1.21'}
             $backup | ConvertTo-Json | Set-Content -LiteralPath $backupPath -Encoding UTF8

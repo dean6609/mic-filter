@@ -4,6 +4,7 @@
 
 - **Voice sound** presets in the tray menu: **Natural** (unchanged, default), **Clear** (removes rumble and low-mid boominess, adds presence and air) and **Broadcast** (stronger presence plus gentle compression for an even, polished voice). Both polished presets end in a soft limiter; switching presets crossfades without clicks. Processing cost is about 0.3% of one CPU core.
 - Clearer tray menu: options grouped under **Voice sound**, **Silence between words** (Off / Balanced / Strict) and **Original microphone sound** (0% / 15%). "Start with Windows" is now "Show this icon when Windows starts", and Exit reads "Exit and disable filter".
+- Friendlier setup window: short colored steps with a progress indicator, plain-language errors and a clear final message (for example "Almost done: restart Windows to start using the new version"). Technical details go to the log file only.
 - Presets are stored in a new `options.bin`, so the existing `state.bin` format is unchanged.
 
 ## 0.5.2 — 2026-10-01
