@@ -95,12 +95,16 @@ try {
         }
         foreach($name in @('MicFilter','WavoFilter')){Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $name -ErrorAction SilentlyContinue}
         $step='Delete files'
-        $pending=0
-        foreach($directory in @($programDir,$legacyProgramDir,(Join-Path $env:ProgramData 'MicFilter'),(Join-Path $env:ProgramData 'WavoFilter'))){$pending+=Remove-PathOrSchedule -Path $directory}
+        $pending=0;$leftovers=@()
+        foreach($directory in @($programDir,$legacyProgramDir,(Join-Path $env:ProgramData 'MicFilter'),(Join-Path $env:ProgramData 'WavoFilter'))){
+            # One undeletable file must not stop the remaining cleanup.
+            try{$pending+=Remove-PathOrSchedule -Path $directory}catch{$leftovers+=$directory;Write-InstallerLog $_.Exception.Message}
+        }
         Write-InstallerLog ('Uninstall completed; entries deleted at restart: '+$pending)
         $message='MicFilter was removed from this computer.'+[Environment]::NewLine+'Microphones use their previous configuration.'
         if($pending){$message+=[Environment]::NewLine+[Environment]::NewLine+'Some files are still in use by Windows audio. They will be deleted when you restart Windows.'}
-        elseif(-not $applied){$message+=[Environment]::NewLine+[Environment]::NewLine+'Reconnect the microphone or restart Windows to finish.'}
+        if($leftovers){$message+=[Environment]::NewLine+[Environment]::NewLine+'Could not delete these folders; restart Windows and delete them manually:'+[Environment]::NewLine+($leftovers -join [Environment]::NewLine)}
+        elseif(-not $pending -and -not $applied){$message+=[Environment]::NewLine+[Environment]::NewLine+'Reconnect the microphone or restart Windows to finish.'}
         Write-InstallerResult $message
         $exitCode=0
         return # The finally block still shows the result.

@@ -89,17 +89,18 @@ function Remove-PathOrSchedule {
     if(-not('MicFilter.NativeFile' -as [type])){
         Add-Type -Namespace MicFilter -Name NativeFile -MemberDefinition '[DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] public static extern bool MoveFileEx(string existing,string replacement,int flags);'
     }
+    # [NullString]::Value: PowerShell would pass $null as an empty string, which MoveFileEx rejects.
     $delayUntilReboot=4;$pending=0
     foreach($file in @(Get-ChildItem -LiteralPath $Path -Recurse -Force -File -ErrorAction SilentlyContinue)){
         try{Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop}
-        catch{if([MicFilter.NativeFile]::MoveFileEx($file.FullName,$null,$delayUntilReboot)){$pending++}else{throw ('Could not delete '+$file.FullName)}}
+        catch{if([MicFilter.NativeFile]::MoveFileEx($file.FullName,[NullString]::Value,$delayUntilReboot)){$pending++}else{throw ('Could not delete '+$file.FullName+' (Windows error '+[Runtime.InteropServices.Marshal]::GetLastWin32Error()+')')}}
     }
     if(Test-Path -LiteralPath $Path -PathType Container){
         # Deepest folders first: Windows runs queued deletions in order, after the files.
         $folders=@(Get-ChildItem -LiteralPath $Path -Recurse -Force -Directory | Sort-Object {$_.FullName.Length} -Descending | ForEach-Object FullName)+$Path
         foreach($folder in $folders){
             if(@(Get-ChildItem -LiteralPath $folder -Force).Count -eq 0){Remove-Item -LiteralPath $folder -Force}
-            elseif([MicFilter.NativeFile]::MoveFileEx($folder,$null,$delayUntilReboot)){$pending++}
+            elseif([MicFilter.NativeFile]::MoveFileEx($folder,[NullString]::Value,$delayUntilReboot)){$pending++}
         }
     }
     return $pending
