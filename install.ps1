@@ -154,12 +154,12 @@ try {
         $step='Copy application files'
         foreach($name in @('MicFilter.exe','MicFilterAPO.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){
             $sourceFile=Join-Path $sourceRoot $name;$destination=Join-Path $programDir $name
-            if($sourceFile -ne $destination -and ((-not(Test-Path -LiteralPath $destination)) -or (Get-FileHash -LiteralPath $sourceFile).Hash -ne (Get-FileHash -LiteralPath $destination).Hash)){Copy-Item -LiteralPath $sourceFile -Destination $destination -Force}
+            if($sourceFile -ne $destination -and ((-not(Test-Path -LiteralPath $destination)) -or (Get-Sha256 $sourceFile) -ne (Get-Sha256 $destination))){Copy-Item -LiteralPath $sourceFile -Destination $destination -Force}
         }
         # Payload name used before 0.5; the registered DLL is always the hashed copy below.
         $legacyPayload=Join-Path $programDir 'MicFilterAPO-v4.dll';if(Test-Path -LiteralPath $legacyPayload){Remove-Item -LiteralPath $legacyPayload -Force -ErrorAction SilentlyContinue}
         $dllSource=Join-Path $sourceRoot 'MicFilterAPO.dll'
-        $dllHash=(Get-FileHash -LiteralPath $dllSource -Algorithm SHA256).Hash.ToLowerInvariant()
+        $dllHash=(Get-Sha256 $dllSource).ToLowerInvariant()
         $dllDestination=Join-Path $programDir ('MicFilterAPO-'+$dllHash.Substring(0,16)+'.dll')
         if(-not(Test-Path -LiteralPath $dllDestination)){Copy-Item -LiteralPath $dllSource -Destination $dllDestination}
         $step='Prepare control file'
@@ -175,14 +175,14 @@ try {
             [IO.File]::WriteAllBytes($stateFile,$stateBytes)
         }
         # Only the non-executable control file is writable by interactive users.
-        $stateAcl=Get-Acl -LiteralPath $stateFile
+        $stateAcl=[IO.File]::GetAccessControl($stateFile)
         $usersSid=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
         $stateRule=[Security.AccessControl.FileSystemAccessRule]::new($usersSid,'Read,Write','Allow')
-        $stateAcl.SetAccessRule($stateRule);Set-Acl -LiteralPath $stateFile -AclObject $stateAcl
-        $stateAcl=Get-Acl -LiteralPath $stateFile
+        $stateAcl.SetAccessRule($stateRule);[IO.File]::SetAccessControl($stateFile,$stateAcl)
+        $stateAcl=[IO.File]::GetAccessControl($stateFile)
         $serviceSid=[Security.Principal.SecurityIdentifier]::new('S-1-5-19')
         $stateAcl.SetAccessRule([Security.AccessControl.FileSystemAccessRule]::new($serviceSid,'Read,Write','Allow'))
-        Set-Acl -LiteralPath $stateFile -AclObject $stateAcl
+        [IO.File]::SetAccessControl($stateFile,$stateAcl)
         $oldDllPath=if(Test-Path -LiteralPath ($classPath+'\InprocServer32')){(Get-Item -LiteralPath ($classPath+'\InprocServer32')).GetValue('')}else{$null}
         try{
             $step='Register effect DLL'

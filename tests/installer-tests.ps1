@@ -27,6 +27,8 @@ if($manifest -notmatch ('version="'+[regex]::Escape($micFilterVersion)+'\.0"')){
 if((Select-String -LiteralPath (Join-Path $testRoot 'src\setup.cpp') -Pattern ('MICFILTER '+[regex]::Escape($micFilterVersion)+' -') -AllMatches).Matches.Count -ne 2){throw 'setup.cpp banners differ from installer-registry.ps1.'}
 if((Get-Content -LiteralPath (Join-Path $testRoot 'GETTING_STARTED.txt') -TotalCount 1) -notmatch ('^MicFilter '+[regex]::Escape($micFilterVersion)+' ')){throw 'GETTING_STARTED.txt version differs.'}
 if((Select-String -LiteralPath (Join-Path $testRoot 'CHANGELOG.md') -Pattern '^## (\S+)' | Select-Object -First 1).Matches[0].Groups[1].Value -ne $micFilterVersion){throw 'CHANGELOG.md does not start with this version.'}
+$hashed=Join-Path $DistributionDirectory 'install.ps1'
+if((Get-Sha256 $hashed) -ne (Get-FileHash -LiteralPath $hashed -Algorithm SHA256).Hash){throw 'Get-Sha256 differs from Get-FileHash.'}
 $tree=Join-Path ([IO.Path]::GetTempPath()) ('MicFilter.Tests.'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path (Join-Path $tree 'logs') -Force | Out-Null
 [IO.File]::WriteAllText((Join-Path $tree 'logs\a.log'),'x');[IO.File]::WriteAllText((Join-Path $tree 'b.dll'),'x')

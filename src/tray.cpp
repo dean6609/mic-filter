@@ -258,6 +258,8 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
 }
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int){
+    // Windows PowerShell 5.1 must build its own module path; one inherited from PowerShell 7 breaks cmdlet loading.
+    SetEnvironmentVariableW(L"PSModulePath",nullptr);
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);enumerate();
     int argc=0;auto** argv=CommandLineToArgvW(GetCommandLineW(),&argc);
     if(argc>1){std::wstring command=argv[1];mapping.open();int result=0;

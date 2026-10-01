@@ -62,6 +62,8 @@ int runScript(const std::wstring& staging,const std::wstring& scriptAndArguments
 void pause(){std::wcout<<L"\nPress Enter to close.\n"<<std::flush;std::wstring ignored;std::getline(std::wcin,ignored);}
 }
 int wmain(int argc,wchar_t** argv){
+    // Windows PowerShell 5.1 must build its own module path; one inherited from PowerShell 7 breaks cmdlet loading.
+    SetEnvironmentVariableW(L"PSModulePath",nullptr);
     _setmode(_fileno(stdout),_O_U16TEXT);_setmode(_fileno(stderr),_O_U16TEXT);SetConsoleTitleW(L"MicFilter - installation");
     bool noPause=false,selfTest=false,list=false,uninstall=false;std::wstring requested;
     for(int i=1;i<argc;++i){const std::wstring arg=argv[i];if(arg==L"--no-pause")noPause=true;else if(arg==L"--self-test")selfTest=true;else if(arg==L"--list-devices")list=true;else if(arg==L"--uninstall")uninstall=true;else if(arg==L"--endpoint"&&i+1<argc){GUID guid{};if(FAILED(CLSIDFromString(argv[++i],&guid))){std::wcerr<<L"Invalid microphone identifier.\n";return 2;}wchar_t text[40]{};StringFromGUID2(guid,text,40);requested=text;}else{std::wcerr<<L"Unknown option.\n";return 2;}}

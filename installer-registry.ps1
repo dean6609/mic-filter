@@ -38,6 +38,12 @@ function Set-EndpointEffect {
     $Key.SetValue($Name,$Value,[Microsoft.Win32.RegistryValueKind]::String)
     if($Key.GetValue($Name) -ne $Value){throw 'The effect value does not match after writing it.'}
 }
+# File hashing and ACLs use .NET directly: these scripts must not depend on module autoloading,
+# which can fail when Windows PowerShell inherits a PowerShell 7 module path.
+function Get-Sha256([Parameter(Mandatory=$true)][string]$Path) {
+    $sha=[Security.Cryptography.SHA256]::Create();$stream=[IO.File]::OpenRead($Path)
+    try{return [BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','')}finally{$stream.Dispose();$sha.Dispose()}
+}
 function Get-CaptureEffectSlots {
     # Every capture device whose effect slot holds MicFilter or a WavoFilter build.
     $ours=@($ownClsid)+$legacyClsids
