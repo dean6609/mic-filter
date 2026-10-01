@@ -23,7 +23,7 @@ Use `-OutputDirectory dist-dev` with `build.ps1`, followed by `package.ps1 -Dist
 | `src/tray.cpp` | Tray controls, selected endpoint, diagnostics and command-line control. |
 | `src/shared.h` | Stable 64-byte control/telemetry ABI. |
 | `src/apo.cpp` | COM aggregation, APO lifecycle, negotiation and audio callbacks. |
-| `src/dsp.cpp` | Fixed-buffer adapter for unmodified RNNoise inference at 48 kHz, gate fades, dry/wet mix and -20 dB floor. |
+| `src/dsp.cpp` | Fixed-buffer adapter for unmodified RNNoise inference at 48 kHz, gate fades, dry/wet mix and the -20 dB floor held around speech. |
 | `src/apo_sdk.h` | Project-written declarations of the public Windows APO interfaces. |
 | `src/rate_processor.cpp` | Streaming conversion to/from 48 kHz, channel handling and bypass. |
 | `src/audio_check.h` | WASAPI capture checks; counters and levels only. |

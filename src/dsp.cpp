@@ -24,7 +24,7 @@ bool Processor::initialize(unsigned channels) {
     return true;
 }
 void Processor::reset() noexcept {
-    position_=0; graceLeft_=0; gate_=1.0f; previouslyEnabled_=false;
+    position_=0; graceLeft_=0; floorHoldLeft_=0; gate_=1.0f; floor_=0.0f; previouslyEnabled_=false;
     input_={}; dryPrevious_={}; dryOlder_={}; output_={};
     for(unsigned c=0;c<channels_;++c) if(states_[c]) rnnoise_init(states_[c],nullptr);
 }
@@ -37,13 +37,20 @@ void Processor::block(const Settings& settings) noexcept {
     else if(graceLeft_>0) { voice=true; --graceLeft_; }
     const float target=voice ? 1.0f : 0.0f;
     const float step=voice ? kGateOpenStep : kGateCloseStep;
+    // The floor only blends in the original signal; the voice itself always comes from RNNoise.
+    if(probability>=kFloorVoice) floorHoldLeft_=kFloorHoldBlocks;
+    else if(floorHoldLeft_>0) --floorHoldLeft_;
+    const float floorTarget=floorHoldLeft_>0 ? 1.0f : 0.0f;
+    const float floorStep=floorHoldLeft_>0 ? kFloorOpenStep : kFloorCloseStep;
     for(unsigned i=0;i<480;++i) {
         // One gate envelope for all channels keeps the stereo image stable.
         gate_=gate_<target ? std::min(target,gate_+step) : std::max(target,gate_-step);
+        floor_=floor_<floorTarget ? std::min(floorTarget,floor_+floorStep) : std::max(floorTarget,floor_-floorStep);
+        const float floorGain=kFloorGain*floor_;
         for(unsigned c=0;c<channels_;++c) {
             const float dry=dryOlder_[c][i];
             const float mixed=output_[c][i]/32767.0f*gate_*settings.wet + dry*(1.0f-settings.wet);
-            output_[c][i]=mixed*(1.0f-kFloorGain) + dry*kFloorGain;
+            output_[c][i]=mixed*(1.0f-floorGain) + dry*floorGain;
         }
     }
     dryOlder_=dryPrevious_;

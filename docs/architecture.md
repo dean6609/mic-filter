@@ -19,7 +19,7 @@ The engine supports the Windows float32 processing format, 1â€“8 channels and 8â
 
 ## Processing details
 
-RNNoise output is 20 ms behind its input (overlap/add plus one delayed frame); with the 10 ms frame buffer the filtered path is 1440 samples late at 48 kHz. The original (dry) signal uses the same delay so partial mixes do not comb-filter. The optional voice gate fades in over 5 ms and out over 50 ms. A fixed -20 dB share of the original signal (`kFloorGain` in `src/dsp.h`) limits maximum attenuation so word tails never drop into digital silence. Reported APO latency is 30 ms plus any resampler delay.
+RNNoise output is 20 ms behind its input (overlap/add plus one delayed frame); with the 10 ms frame buffer the filtered path is 1440 samples late at 48 kHz. The original (dry) signal uses the same delay so partial mixes do not comb-filter. The optional voice gate fades in over 5 ms and out over 50 ms. Around speech a -20 dB share of the original signal (`kFloorGain` in `src/dsp.h`) is mixed in so word tails never drop into digital silence. It is held while RNNoise's voice probability reaches 0.6 and for 300 ms after, then fades out over 400 ms, so pauses get RNNoise's full noise reduction. The floor only adds the original signal; the voice itself always comes from RNNoise, so its fade cannot cut a word. Reported APO latency is 30 ms plus any resampler delay.
 
 ## Installation and upgrades
 
