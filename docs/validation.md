@@ -2,7 +2,7 @@
 
 ## Automated checks
 
-`build.ps1 -RunTests` checks exact bypass, direct RNNoise equivalence at 48 kHz, variable callbacks, dry/wet alignment against the measured model delay, click-free gate fades, the -20 dB floor, in-place buffers, silence, resampling continuity, voice fundamental preservation, toggle reset, COM aggregation, reference counts, format negotiation and buffer bounds.
+`build.ps1 -RunTests` checks exact bypass, direct RNNoise equivalence at 48 kHz, variable callbacks, dry/wet alignment against the measured model delay, click-free gate fades, the -20 dB floor around speech and its click-free fade, more than 35 dB of noise reduction away from speech, in-place buffers, silence, resampling continuity, voice fundamental preservation, toggle reset, COM aggregation, reference counts, format negotiation and buffer bounds.
 
 The tested rates are 8, 16, 22.05, 44.1, 48, 96 and 192 kHz; tested channel counts are 1, 2, 4 and 8. These check the processing implementation, not every audio driver.
 

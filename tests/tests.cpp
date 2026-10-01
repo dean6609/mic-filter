@@ -54,6 +54,52 @@ void gateTest(){
     float worst=0;for(unsigned n=26000;n<47999;++n)worst=std::max(worst,std::abs(out[n+1]-out[n]));
     require(worst<0.02f,"gate closes with a click");
 }
+// Direct RNNoise v1.21 output, aligned the way Processor delivers it (one extra 10 ms block),
+// plus the floor gain per output sample, re-derived here from the model's voice probability.
+struct Reference {std::vector<float> samples,floor;};
+Reference rnnoiseReference(const std::vector<float>& input,unsigned channels){
+    const unsigned frames=input.size()/channels;Reference r{std::vector<float>(input.size(),0),std::vector<float>(frames,0)};
+    std::array<std::array<float,480>,2> in{},out{};std::array<DenoiseState*,2> rn{};
+    for(unsigned c=0;c<channels;++c){rn[c]=rnnoise_create(nullptr);require(rn[c]!=nullptr,"reference model init");}
+    unsigned hold=0;float level=0;
+    for(unsigned offset=0;offset+480<=frames;offset+=480){
+        float probability=0;
+        for(unsigned c=0;c<channels;++c){
+            for(unsigned f=0;f<480;++f)in[c][f]=input[(offset+f)*channels+c]*32767;
+            probability=std::max(probability,rnnoise_process_frame(rn[c],out[c].data(),in[c].data()));
+            if(offset+960<=frames)for(unsigned f=0;f<480;++f)r.samples[(offset+480+f)*channels+c]=out[c][f]/32767;
+        }
+        if(probability>=micfilter::kFloorVoice)hold=micfilter::kFloorHoldBlocks;else if(hold>0)--hold;
+        for(unsigned f=0;f<480;++f){
+            level=hold>0?std::min(1.0f,level+micfilter::kFloorOpenStep):std::max(0.0f,level-micfilter::kFloorCloseStep);
+            if(offset+960<=frames)r.floor[offset+480+f]=level*micfilter::kFloorGain;
+        }
+    }
+    for(unsigned c=0;c<channels;++c)rnnoise_destroy(rn[c]);
+    return r;
+}
+// Around speech the original signal is kept at -20 dB; away from speech the full RNNoise
+// reduction returns through a 400 ms fade, never a jump.
+void floorTest(){
+    const unsigned frames=48000*3,voiced=48000,delay=1440;const float f=micfilter::kFloorGain;
+    std::vector<float> input(frames);uint32_t rng=7;float lp=0;double phase=0;
+    for(unsigned n=0;n<frames;++n){
+        rng=rng*1664525u+1013904223u;const float white=(rng>>8)/16777216.0f-0.5f;lp=0.97f*lp+0.03f*white;
+        const double t=n/48000.0;phase+=6.28318530718*(120+15*std::sin(6.28318530718*5*t))/48000;double voice=0;for(int h=1;h<30;++h)voice+=std::sin(h*phase)/h;
+        input[n]=0.02f*white+0.3f*lp+(n<voiced&&std::fmod(t,0.5)<0.35?0.12f*static_cast<float>(voice):0.0f);
+    }
+    const auto out=run(input,1,{480},{true,0,20,1});const auto reference=rnnoiseReference(input,1).samples;
+    auto original=[&](unsigned n){return n>=delay?input[n-delay]:0.0f;};
+    unsigned withFloor=0;for(unsigned n=9600;n<voiced;++n)if(std::abs(out[n]-(reference[n]*(1-f)+original(n)*f))<1e-6f)++withFloor;
+    require(withFloor>(voiced-9600)*9/10,"the -20 dB floor is missing around speech");
+    for(unsigned n=voiced+48000;n<frames;++n)require(std::abs(out[n]-reference[n])<1e-6f,"the floor still leaks noise long after speech");
+    // Recover the floor gain g from out=reference*(1-g)+original*g; a click would be a jump in g.
+    float previous=-1;unsigned previousAt=0;
+    for(unsigned n=voiced;n<voiced+48000;++n){const float d=original(n)-reference[n];if(std::abs(d)<0.01f)continue;const float g=(out[n]-reference[n])/d;
+        if(previous>=0)require(std::abs(g-previous)<1e-4f+(n-previousAt)*1e-5f,"the floor fades out with a click");previous=g;previousAt=n;}
+    double in=0,left=0;for(unsigned n=voiced+48000;n<frames;++n){in+=input[n]*input[n];left+=out[n]*out[n];}
+    require(10*std::log10(in/(left+1e-30))>35,"noise reduction away from speech is below 35 dB");
+}
 void dspTests(){
     auto input=signal(48000,2);micfilter::Settings active{true,0,20,1};
     auto one=run(input,2,{480},active),irregular=run(input,2,{1,200,512,37,960},active);
@@ -61,26 +107,18 @@ void dspTests(){
     require(run(input,2,{200,512},{false,0.85f,20,1})==input,"bypass is not bit-exact");
     require(run(input,2,{200,512},{true,0.85f,20,0})==input,"100% dry bypass is not bit-exact");
     for(float x:one)require(std::isfinite(x),"nonfinite output");
-    std::vector<float> reference(input.size(),0);std::array<DenoiseState*,2> rn{rnnoise_create(nullptr),rnnoise_create(nullptr)};
-    for(auto* p:rn)require(p!=nullptr,"reference model init");
-    std::array<float,480> in{},out{};
-    for(unsigned offset=0;offset<48000;offset+=480)for(unsigned c=0;c<2;++c){
-        for(unsigned f=0;f<480;++f)in[f]=input[(offset+f)*2+c]*32767;
-        rnnoise_process_frame(rn[c],out.data(),in.data());
-        if(offset+480<48000)for(unsigned f=0;f<480;++f)reference[(offset+480+f)*2+c]=out[f]/32767;
-    }
-    for(auto* p:rn)rnnoise_destroy(p);
     // The original signal must use the model's real delay: 10 ms buffering plus 20 ms inside RNNoise.
-    constexpr unsigned delay=1440;const float f=micfilter::kFloorGain;
+    const auto expected=rnnoiseReference(input,2);const auto& reference=expected.samples;constexpr unsigned delay=1440;
     auto original=[&](unsigned frame,unsigned c){return frame>=delay?input[(frame-delay)*2+c]:0.0f;};
-    for(unsigned n=0;n<48000;++n)for(unsigned c=0;c<2;++c)require(std::abs(one[n*2+c]-(reference[n*2+c]*(1-f)+original(n,c)*f))<1e-6f,"processor differs from direct v1.21 RNNoise plus -20 dB floor");
+    for(unsigned n=0;n<48000;++n)for(unsigned c=0;c<2;++c){const float g=expected.floor[n];require(std::abs(one[n*2+c]-(reference[n*2+c]*(1-g)+original(n,c)*g))<1e-6f,"processor differs from direct v1.21 RNNoise plus voice-held floor");}
     const auto mixed=run(input,2,{200,512},{true,0,20,0.85f});
-    for(unsigned n=0;n<48000;++n)for(unsigned c=0;c<2;++c){const float expected=(reference[n*2+c]*0.85f+original(n,c)*0.15f)*(1-f)+original(n,c)*f;require(std::abs(mixed[n*2+c]-expected)<1e-6f,"dry/wet mix differs from expected");}
+    for(unsigned n=0;n<48000;++n)for(unsigned c=0;c<2;++c){const float g=expected.floor[n],want=(reference[n*2+c]*0.85f+original(n,c)*0.15f)*(1-g)+original(n,c)*g;require(std::abs(mixed[n*2+c]-want)<1e-6f,"dry/wet mix differs from expected");}
     alignmentTest();
     gateTest();
+    floorTest();
     micfilter::Processor inPlace;require(inPlace.initialize(2),"inplace init");auto same=input;inPlace.process(same.data(),same.data(),48000,false,active);require(same==one,"in-place processing corrupts input");
     micfilter::Processor silence;require(silence.initialize(1),"silent init");std::vector<float> zeros(512,1);silence.process(nullptr,zeros.data(),512,true,{false,0,20,1});for(float x:zeros)require(x==0,"silent bypass failed");
-    std::cout<<"PASS DSP: bit-exact bypass, direct model equivalence, callback sizes 1/37/200/480/512/960, stereo, in-place, silence, dry/wet aligned to measured 30 ms model delay, faded gate, -20 dB floor\n";
+    std::cout<<"PASS DSP: bit-exact bypass, direct model equivalence, callback sizes 1/37/200/480/512/960, stereo, in-place, silence, dry/wet aligned to measured 30 ms model delay, faded gate, -20 dB floor around speech, >35 dB noise reduction away from speech\n";
     auto performanceInput=signal(48000*10,2);auto begin=std::chrono::steady_clock::now();run(performanceInput,2,{480},active);double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count();
     std::cout<<"BENCHMARK: 10 seconds stereo processed in "<<seconds<<" seconds; real-time factor "<<seconds/10<<" (CPU synthetic workload, not microphone latency)\n";
 }
