@@ -65,7 +65,7 @@ int wmain(int argc,wchar_t** argv){
             auto devices=microphones();if(devices.empty())throw std::runtime_error("No enabled, connected microphones found. Connect one and run the installer again.");
             if(list){for(const auto& d:devices)std::wcout<<d.name<<L" | "<<d.guid<<L"\n";result=0;}
             else{
-                std::wcout<<L"MICFILTER 0.4.0 - native microphone noise suppression\n\n"
+                std::wcout<<L"MICFILTER 0.5.0 - native microphone noise suppression\n\n"
                     L"RNNoise will be installed in Windows for the selected microphone.\n"
                     L"The model is included: no audio host or internet connection is needed.\n"
                     L"The first installation enables the filter. Rebooting preserves its state.\n"

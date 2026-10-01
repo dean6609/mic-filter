@@ -22,7 +22,7 @@ void RateProcessor::reset() noexcept {
     head_=0;count_=padding_;queue_={};enabled_=false;healthy_=true;
 }
 LONG64 RateProcessor::latency() const noexcept {
-    double seconds=0.020;
+    double seconds=0.030;
     if(to48_&&from48_)seconds+=static_cast<double>(speex_resampler_get_input_latency(to48_)+speex_resampler_get_output_latency(from48_)+padding_)/rate_;
     return static_cast<LONG64>(std::ceil(seconds*10000000.0));
 }

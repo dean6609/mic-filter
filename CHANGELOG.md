@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 — 2026-09-30
+
+- Fixed the original-signal timing in the dry/wet mix. RNNoise v1.21 delays its output by 20 ms (overlap/add plus one delayed frame), not 10 ms; the 10 ms mismatch comb-filtered partial mixes with notches every 100 Hz, which hollowed low voices and made vibrato fluctuate.
+- The voice-detection gate now fades out over 50 ms and in over 5 ms instead of switching at 10 ms block edges, removing clicks at word endings.
+- Maximum attenuation is limited to -20 dB: a small amount of the original signal is always kept, so word tails and room tone no longer drop into digital silence.
+- Reported latency corrected from 20 ms to 30 ms.
+- Tests now verify the dry path against the model's measured delay and check that the gate closes without clicks.
+
 ## 0.4.0 — 2026-09-30
 
 - Renamed the project, application and installer to **MicFilter**.
