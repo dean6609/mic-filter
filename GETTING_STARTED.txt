@@ -1,10 +1,11 @@
-MicFilter 0.5.0 — Native microphone noise suppression for Windows
+MicFilter 0.5.1 — Native microphone noise suppression for Windows
 
 INSTALL
 Double-click MicFilter-Setup.exe and accept the Windows administrator prompt.
 Only connected, enabled microphones appear. If there is one, setup selects it
 automatically; if there are several, choose a number. Setup shows progress,
-checks capture without saving your voice, and creates MicFilter on the desktop.
+checks capture without saving your voice, and creates MicFilter on the desktop
+and in the Start menu.
 All components and the model are included; installation works offline.
 
 CONTROL
@@ -26,14 +27,22 @@ If setup asks for reconnection or a reboot, do that, open a capture app and
 check for Filter confirmed in diagnostics. Listen to consonants, quiet word
 endings and dictation quality as well as the noise reduction.
 
-REMOVE
-Right-click the icon and choose Remove effect and restore configuration.
-Reconnect the microphone or restart Windows to rebuild its effects chain.
-One microphone is managed per installation. Remove the current effect before
-running setup again to select another microphone.
+UNINSTALL
+Settings > Apps > Installed apps > MicFilter > Uninstall, or right-click the
+icon and choose Uninstall MicFilter. Microphones return to their previous
+configuration and all MicFilter files, shortcuts and settings are deleted.
+If Windows audio still holds a file, it is deleted at the next restart.
+If the program folder is damaged, run: MicFilter-Setup.exe --uninstall
 
-The installer is unsigned and Windows may display an unknown-publisher prompt.
-It never asks you to disable Windows security protections.
+CHANGE MICROPHONE
+One microphone is managed per installation. Right-click the icon, choose
+Remove effect and restore configuration, then run setup again.
+
+TROUBLESHOOTING
+"Windows protected your PC": the installer is not code-signed. Choose
+More info > Run anyway. It never asks you to disable Windows security.
+Filter missing after a driver or Windows update: the update can reset the
+microphone effects. Run MicFilter-Setup.exe again; settings are kept.
 
 Source and downloads: https://github.com/dean6609/mic-filter
 GPL-3.0; RNNoise and SpeexDSP retain their included BSD license notices.

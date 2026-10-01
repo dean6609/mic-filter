@@ -22,6 +22,18 @@ try{
     $fresh=Open-EndpointEffectsKey -SubKey ($fixture+'\FxProperties') -Hive ([Microsoft.Win32.RegistryHive]::CurrentUser) -CreateIfMissing
     try{Set-EndpointEffect -Key $fresh -Name 'effect' -Value 'test';if($fresh.GetValue('effect') -ne 'test'){throw 'Could not create an initially missing effect key.'}}finally{$fresh.Dispose()}
 }finally{if($key){$key.Dispose()};$base.DeleteSubKeyTree($fixture,$false);$base.Dispose()}
+$manifest=Get-Content -LiteralPath (Join-Path $testRoot 'src\setup.manifest') -Raw
+if($manifest -notmatch ('version="'+[regex]::Escape($micFilterVersion)+'\.0"')){throw 'setup.manifest version differs from installer-registry.ps1.'}
+if((Select-String -LiteralPath (Join-Path $testRoot 'src\setup.cpp') -Pattern ('MICFILTER '+[regex]::Escape($micFilterVersion)+' -') -AllMatches).Matches.Count -ne 2){throw 'setup.cpp banners differ from installer-registry.ps1.'}
+if((Get-Content -LiteralPath (Join-Path $testRoot 'GETTING_STARTED.txt') -TotalCount 1) -notmatch ('^MicFilter '+[regex]::Escape($micFilterVersion)+' ')){throw 'GETTING_STARTED.txt version differs.'}
+if((Select-String -LiteralPath (Join-Path $testRoot 'CHANGELOG.md') -Pattern '^## (\S+)' | Select-Object -First 1).Matches[0].Groups[1].Value -ne $micFilterVersion){throw 'CHANGELOG.md does not start with this version.'}
+$hashed=Join-Path $DistributionDirectory 'install.ps1'
+if((Get-Sha256 $hashed) -ne (Get-FileHash -LiteralPath $hashed -Algorithm SHA256).Hash){throw 'Get-Sha256 differs from Get-FileHash.'}
+$tree=Join-Path ([IO.Path]::GetTempPath()) ('MicFilter.Tests.'+[guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $tree 'logs') -Force | Out-Null
+[IO.File]::WriteAllText((Join-Path $tree 'logs\a.log'),'x');[IO.File]::WriteAllText((Join-Path $tree 'b.dll'),'x')
+if((Remove-PathOrSchedule -Path $tree) -ne 0 -or (Test-Path -LiteralPath $tree)){throw 'An unused folder was not deleted immediately.'}
+if((Remove-PathOrSchedule -Path $tree) -ne 0){throw 'A missing path must be a no-op.'}
 $isAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if(-not $isAdmin){
     $failureReport=Join-Path $DistributionDirectory 'test-installer-denied.txt'
@@ -30,5 +42,9 @@ if(-not $isAdmin){
     $message=Get-Content -LiteralPath $failureReport -Raw -Encoding UTF8
     if($message -notmatch 'administrator' -or $message -notmatch 'Step:'){throw 'The report does not identify the error and its step.'}
     if(-not(Test-Path -LiteralPath ([IO.Path]::ChangeExtension($failureReport,'.log')))){throw 'The persistent log was not created.'}
+    $uninstallReport=Join-Path $DistributionDirectory 'test-uninstall-denied.txt'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $DistributionDirectory 'install.ps1') -Action Uninstall -ResultPath $uninstallReport
+    if($LASTEXITCODE -ne 1){throw 'The non-elevated uninstaller did not return a failure code.'}
+    if((Get-Content -LiteralPath $uninstallReport -Raw -Encoding UTF8) -notmatch 'administrator'){throw 'The uninstall report does not explain the permission error.'}
 }
-Write-Host 'PASS installer: scripts PS5.1, UTF-8, targeted registry value update/restore, persistent failure report and exit code.'
+Write-Host 'PASS installer: scripts PS5.1, UTF-8, version consistency, targeted registry value update/restore, folder deletion, persistent failure reports and exit codes.'

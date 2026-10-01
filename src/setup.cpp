@@ -46,26 +46,46 @@ int elevate(const std::wstring& arguments){
     const auto console=GetConsoleWindow();if(console)ShowWindow(console,SW_HIDE);
     WaitForSingleObject(launch.hProcess,INFINITE);DWORD code=1;GetExitCodeProcess(launch.hProcess,&code);CloseHandle(launch.hProcess);return static_cast<int>(code);
 }
+// Administrator-only folder under Program Files for the extracted scripts.
+std::wstring createStaging(){
+    PWSTR programFiles=nullptr;if(FAILED(SHGetKnownFolderPath(FOLDERID_ProgramFiles,0,nullptr,&programFiles)))throw std::runtime_error("Program Files is unavailable.");const auto staging=std::wstring(programFiles)+L"\\MicFilter-Setup-"+unique();CoTaskMemFree(programFiles);
+    PSECURITY_DESCRIPTOR descriptor=nullptr;if(!ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",SDDL_REVISION_1,&descriptor,nullptr))throw std::runtime_error("Could not secure the staging folder.");SECURITY_ATTRIBUTES attributes{sizeof(attributes),descriptor,FALSE};const auto created=CreateDirectoryW(staging.c_str(),&attributes);LocalFree(descriptor);if(!created)throw std::runtime_error("Could not create the staging folder.");
+    return staging;
+}
+// Runs "<staging>\<scriptAndArguments>" in this console and returns its exit code.
+int runScript(const std::wstring& staging,const std::wstring& scriptAndArguments){
+    wchar_t system[32768]{};GetSystemDirectoryW(system,32768);const auto powershell=std::wstring(system)+L"\\WindowsPowerShell\\v1.0\\powershell.exe";
+    auto command=L"\""+powershell+L"\" -NoProfile -ExecutionPolicy Bypass -File \""+staging+L"\\"+scriptAndArguments;
+    STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION process{};
+    if(!CreateProcessW(powershell.c_str(),command.data(),nullptr,nullptr,TRUE,0,nullptr,staging.c_str(),&startup,&process))throw std::runtime_error("Could not start the installation script.");WaitForSingleObject(process.hProcess,INFINITE);DWORD code=1;GetExitCodeProcess(process.hProcess,&code);CloseHandle(process.hThread);CloseHandle(process.hProcess);return static_cast<int>(code);
+}
 void pause(){std::wcout<<L"\nPress Enter to close.\n"<<std::flush;std::wstring ignored;std::getline(std::wcin,ignored);}
 }
 int wmain(int argc,wchar_t** argv){
+    // Windows PowerShell 5.1 must build its own module path; one inherited from PowerShell 7 breaks cmdlet loading.
+    SetEnvironmentVariableW(L"PSModulePath",nullptr);
     _setmode(_fileno(stdout),_O_U16TEXT);_setmode(_fileno(stderr),_O_U16TEXT);SetConsoleTitleW(L"MicFilter - installation");
-    bool noPause=false,selfTest=false,list=false;std::wstring requested;
-    for(int i=1;i<argc;++i){const std::wstring arg=argv[i];if(arg==L"--no-pause")noPause=true;else if(arg==L"--self-test")selfTest=true;else if(arg==L"--list-devices")list=true;else if(arg==L"--endpoint"&&i+1<argc){GUID guid{};if(FAILED(CLSIDFromString(argv[++i],&guid))){std::wcerr<<L"Invalid microphone identifier.\n";return 2;}wchar_t text[40]{};StringFromGUID2(guid,text,40);requested=text;}else{std::wcerr<<L"Unknown option.\n";return 2;}}
+    bool noPause=false,selfTest=false,list=false,uninstall=false;std::wstring requested;
+    for(int i=1;i<argc;++i){const std::wstring arg=argv[i];if(arg==L"--no-pause")noPause=true;else if(arg==L"--self-test")selfTest=true;else if(arg==L"--list-devices")list=true;else if(arg==L"--uninstall")uninstall=true;else if(arg==L"--endpoint"&&i+1<argc){GUID guid{};if(FAILED(CLSIDFromString(argv[++i],&guid))){std::wcerr<<L"Invalid microphone identifier.\n";return 2;}wchar_t text[40]{};StringFromGUID2(guid,text,40);requested=text;}else{std::wcerr<<L"Unknown option.\n";return 2;}}
     SYSTEM_INFO systemInfo{};GetNativeSystemInfo(&systemInfo);
     if(!selfTest&&systemInfo.wProcessorArchitecture!=PROCESSOR_ARCHITECTURE_AMD64){std::wcerr<<L"This installer requires Windows on an x64 processor (Intel/AMD).\n";if(!noPause&&!list)pause();return 2;}
-    if(!selfTest&&!list&&!admin())return elevate((requested.empty()?L"":L"--endpoint "+requested+L" ")+(noPause?L"--no-pause":L""));
+    if(!selfTest&&!list&&!admin())return elevate((uninstall?L"--uninstall ":L"")+(requested.empty()?L"":L"--endpoint "+requested+L" ")+(noPause?L"--no-pause":L""));
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);int result=1;std::wstring staging;bool ownsStaging=false;
     try {
         if(selfTest){
             wchar_t temp[32768]{};if(!GetTempPathW(32768,temp))throw std::runtime_error("No temporary folder is available.");staging=std::wstring(temp)+L"MicFilter-package-test-"+unique();if(!CreateDirectoryW(staging.c_str(),nullptr))throw std::runtime_error("Could not create the test directory.");ownsStaging=true;extract(staging);
             for(const auto& entry:payloads){const auto path=staging+L"\\"+entry.name;if(std::filesystem::file_size(path)==0)throw std::runtime_error("Empty resource.");if(entry.id<=102){HANDLE file=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);char magic[2]{};DWORD bytes=0;const auto ok=ReadFile(file,magic,2,&bytes,nullptr);CloseHandle(file);if(!ok||bytes!=2||magic[0]!='M'||magic[1]!='Z')throw std::runtime_error("Invalid embedded binary.");}}
             std::wcout<<L"PASS package: 9 resources extracted; valid EXE/DLL; no microphone installation or changes.\n";result=0;
+        }else if(uninstall){
+            std::wcout<<L"MICFILTER 0.5.1 - uninstall\n\nRestoring microphones and deleting MicFilter files...\n"<<std::flush;
+            staging=createStaging();ownsStaging=true;extract(staging);
+            result=runScript(staging,L"install.ps1\" -Action Uninstall");
+            std::wcout<<(result==0?L"\nMicFilter was removed. Restart Windows if a message above mentions files in use.\n":L"\nUninstall did not complete. See the messages above.\n");
         }else{
             auto devices=microphones();if(devices.empty())throw std::runtime_error("No enabled, connected microphones found. Connect one and run the installer again.");
             if(list){for(const auto& d:devices)std::wcout<<d.name<<L" | "<<d.guid<<L"\n";result=0;}
             else{
-                std::wcout<<L"MICFILTER 0.5.0 - native microphone noise suppression\n\n"
+                std::wcout<<L"MICFILTER 0.5.1 - native microphone noise suppression\n\n"
                     L"RNNoise will be installed in Windows for the selected microphone.\n"
                     L"The model is included: no audio host or internet connection is needed.\n"
                     L"The first installation enables the filter. Rebooting preserves its state.\n"
@@ -84,12 +104,8 @@ int wmain(int argc,wchar_t** argv){
                 std::wstring report;bool compatible=false;if(FAILED(checkAudio(selected.id,report,false,&compatible))){std::wcout<<report;throw std::runtime_error("Cannot open this microphone. Check permissions or close other applications.");}
                 if(!compatible){std::wcout<<report;throw std::runtime_error("Unsupported format. Supports 1-8 channels at 8-192 kHz in the Windows float engine. The filter was not installed.");}
                 std::wcout<<report<<L"\n[2/5] Preparing embedded components...\n"<<std::flush;
-                PWSTR programFiles=nullptr;if(FAILED(SHGetKnownFolderPath(FOLDERID_ProgramFiles,0,nullptr,&programFiles)))throw std::runtime_error("Program Files is unavailable.");staging=std::wstring(programFiles)+L"\\MicFilter-Setup-"+unique();CoTaskMemFree(programFiles);
-                PSECURITY_DESCRIPTOR descriptor=nullptr;if(!ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)",SDDL_REVISION_1,&descriptor,nullptr))throw std::runtime_error("Could not secure the staging folder.");SECURITY_ATTRIBUTES attributes{sizeof(attributes),descriptor,FALSE};const auto created=CreateDirectoryW(staging.c_str(),&attributes);LocalFree(descriptor);if(!created)throw std::runtime_error("Could not create the staging folder.");ownsStaging=true;extract(staging);
-                wchar_t system[32768]{};GetSystemDirectoryW(system,32768);const auto powershell=std::wstring(system)+L"\\WindowsPowerShell\\v1.0\\powershell.exe";
-                auto command=L"\""+powershell+L"\" -NoProfile -ExecutionPolicy Bypass -File \""+staging+L"\\setup-install.ps1\" -EndpointGuid "+selected.guid;
-                STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION process{};
-                if(!CreateProcessW(powershell.c_str(),command.data(),nullptr,nullptr,TRUE,0,nullptr,staging.c_str(),&startup,&process))throw std::runtime_error("Could not start installation.");WaitForSingleObject(process.hProcess,INFINITE);DWORD code=1;GetExitCodeProcess(process.hProcess,&code);CloseHandle(process.hThread);CloseHandle(process.hProcess);result=static_cast<int>(code);
+                staging=createStaging();ownsStaging=true;extract(staging);
+                result=runScript(staging,L"setup-install.ps1\" -EndpointGuid "+selected.guid);
             }
         }
     }catch(const std::exception& error){const std::string text=error.what();std::wcerr<<L"\nInstallation did not complete: "<<std::wstring(text.begin(),text.end())<<L"\n";result=1;}

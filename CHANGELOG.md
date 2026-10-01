@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1 — 2026-10-01
+
+- MicFilter is listed in **Settings → Apps** with version and an **Uninstall** button.
+- Full uninstall from Settings, the tray menu (**Uninstall MicFilter**) or `MicFilter-Setup.exe --uninstall`. It restores every microphone that uses the effect, even when disconnected, and deletes program files, settings, logs, shortcuts, the startup entry and registrations. Files Windows audio still holds are deleted at the next restart.
+- Leftovers from WavoFilter builds (program folder, class registrations, shortcut) are removed by uninstall, and by updates once no microphone uses them.
+- Updates delete effect DLLs from earlier versions instead of keeping one per release.
+- Setup also adds MicFilter to the Start menu.
+- The effect registration reports version 0.5 (was 0.4).
+- README and GETTING_STARTED cover uninstalling, the SmartScreen prompt and driver updates that reset microphone effects.
+
 ## 0.5.0 — 2026-09-30
 
 - Fixed the original-signal timing in the dry/wet mix. RNNoise v1.21 delays its output by 20 ms (overlap/add plus one delayed frame), not 10 ms; the 10 ms mismatch comb-filtered partial mixes with notches every 100 Hz, which hollowed low voices and made vibrato fluctuate.
