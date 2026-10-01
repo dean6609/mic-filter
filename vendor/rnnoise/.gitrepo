@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/git-commands/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/xiph/rnnoise
+	branch = main
+	commit = 70f1d256acd4b34a572f999a05c87bf00b67730d
+	parent = 7174cae70a1944ce9c6a600006606a57fb491de8
+	method = merge
+	cmdver = 0.4.3

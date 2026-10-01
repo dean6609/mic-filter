@@ -1,0 +1,4 @@
+LIBRARY WavoFilterAPO
+EXPORTS
+    DllGetClassObject
+    DllCanUnloadNow

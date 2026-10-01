@@ -1,0 +1,11 @@
+tools/
+build/
+dist/
+dist-update/
+dist-release/
+release/
+test-results.txt
+test-results/
+# Private forensic tools from the development machine.
+diagnose-native.ps1
+validate-installed.ps1
