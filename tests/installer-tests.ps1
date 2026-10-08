@@ -19,6 +19,12 @@ try{
     if($key.GetValue('effect') -ne 'new' -or $key.GetValue('unrelated') -ne 'preserved'){throw 'Updating one value changed unrelated configuration.'}
     Set-EndpointEffect -Key $key -Name 'effect' -Value 'old'
     if($key.GetValue('effect') -ne 'old'){throw 'The previous value was not restored.'}
+    Set-EndpointEffect -Key $key -Name $effectSlot -Value $ownClsid
+    Restore-EndpointSnapshot $key $null
+    if($key.GetValue($effectSlot)){throw 'Batch restoration did not remove our newly added effect.'}
+    Set-EndpointEffect -Key $key -Name $effectSlot -Value '{00000000-0000-0000-0000-000000000099}'
+    $rejected=$false;try{Restore-EndpointSnapshot $key $null}catch{$rejected=$true}
+    if(-not $rejected -or $key.GetValue($effectSlot) -ne '{00000000-0000-0000-0000-000000000099}'){throw 'Batch restoration overwrote a concurrent third-party effect.'}
     $fresh=Open-EndpointEffectsKey -SubKey ($fixture+'\FxProperties') -Hive ([Microsoft.Win32.RegistryHive]::CurrentUser) -CreateIfMissing
     try{Set-EndpointEffect -Key $fresh -Name 'effect' -Value 'test';if($fresh.GetValue('effect') -ne 'test'){throw 'Could not create an initially missing effect key.'}}finally{$fresh.Dispose()}
 }finally{if($key){$key.Dispose()};$base.DeleteSubKeyTree($fixture,$false);$base.Dispose()}

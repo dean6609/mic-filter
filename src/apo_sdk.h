@@ -11,6 +11,8 @@
 #include <cstddef>
 #include <mmreg.h>
 #include <unknwn.h>
+#include <propsys.h>
+#include <mmdeviceapi.h>
 #include <audioapotypes.h> // MinGW: HNSTIME, APO_BUFFER_FLAGS, APO_CONNECTION_PROPERTY
 
 #define APOERR_ALREADY_INITIALIZED          static_cast<HRESULT>(0x887D0001L)
@@ -106,6 +108,28 @@ struct IAudioProcessingObject : public IUnknown {
 };
 
 struct IAudioSystemEffects : public IUnknown {};
+
+// Public initialization context, from Microsoft's APOInitSystemEffects/2 reference.
+struct APOInitBaseStruct {UINT32 cbSize;CLSID clsid;};
+struct APOInitSystemEffects {
+    APOInitBaseStruct APOInit;
+    IPropertyStore* pAPOEndpointProperties;
+    IPropertyStore* pAPOSystemEffectsProperties;
+    void* pReserved;
+    IMMDeviceCollection* pDeviceCollection;
+};
+struct APOInitSystemEffects2 {
+    APOInitBaseStruct APOInit;
+    IPropertyStore* pAPOEndpointProperties;
+    IPropertyStore* pAPOSystemEffectsProperties;
+    void* pReserved;
+    IMMDeviceCollection* pDeviceCollection;
+    UINT nSoftwareIoDeviceInCollection,nSoftwareIoConnectorIndex;
+    GUID AudioProcessingMode;
+    BOOL InitializeForDiscoveryOnly;
+};
+static_assert(sizeof(APOInitSystemEffects)==56 && offsetof(APOInitSystemEffects,pAPOEndpointProperties)==24);
+static_assert(sizeof(APOInitSystemEffects2)==88);
 
 // MinGW's __uuidof needs an explicit GUID for every interface it is used with.
 __CRT_UUID_DECL(IAudioProcessingObject,0xfd7f2b29,0x24d0,0x4b5c,0xb1,0x77,0x59,0x2c,0x39,0xf9,0xca,0x10)

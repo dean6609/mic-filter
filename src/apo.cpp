@@ -1,8 +1,10 @@
+#include <initguid.h>
 #include "rate_processor.h"
 #include "apo_sdk.h"
 #include <cstring>
 #include <new>
 #include "apo_trace.h"
+#include <functiondiscoverykeys_devpkey.h>
 
 namespace {
 volatile LONG objects=0;
@@ -30,6 +32,7 @@ class Apo final:public IAudioProcessingObject,public IAudioProcessingObjectRT,
     UINT32 channels_=0,maxFrames_=0;
     float rate_=0;
     micfilter::StateMapping mapping_;
+    micfilter::StateMapping endpointTelemetry_;
     micfilter::OptionsMapping options_;
     micfilter::RateProcessor processor_;
     micfilter::Trace trace_;
@@ -65,6 +68,17 @@ public:
         initialized_=true;
         const bool mapped=mapping_.open(); // All file operations happen before real-time processing.
         options_.open(); // Optional: without it the Natural voice preset applies.
+        // Endpoint telemetry prevents another input's activity from confirming this microphone.
+        // Unknown initialization layouts keep global controls but cannot confirm an endpoint.
+        if(data&&(bytes==sizeof(APOInitSystemEffects)||bytes==sizeof(APOInitSystemEffects2))){
+            APOInitSystemEffects context{};std::memcpy(&context,data,sizeof(context));
+            if(context.APOInit.cbSize==bytes&&context.APOInit.clsid==micfilter::kClsid&&context.pAPOEndpointProperties){
+                PROPVARIANT value;PropVariantInit(&value);
+                if(SUCCEEDED(context.pAPOEndpointProperties->GetValue(PKEY_AudioEndpoint_GUID,&value))&&value.vt==VT_LPWSTR&&value.pwszVal)
+                    endpointTelemetry_.openEndpoint(value.pwszVal);
+                PropVariantClear(&value);
+            }
+        }
         const auto mappingError=mapped?0:GetLastError();
         trace_.write(L"Initialize bytes="+std::to_wstring(bytes)+L" controls="+std::to_wstring(mapped)+L" mappingError="+std::to_wstring(mappingError));
         return S_OK;
@@ -119,7 +133,7 @@ public:
         channels_=a.dwSamplesPerFrame;rate_=a.fFramesPerSecond;maxFrames_=in[0]->u32MaxFrameCount;
         supported_=processor_.initialize(channels_,static_cast<unsigned>(rate_));
         if(!supported_)return E_OUTOFMEMORY;
-        if(auto* state=mapping_.get()) {
+        for(auto* state:{mapping_.get(),endpointTelemetry_.get()})if(state) {
             InterlockedExchange(&state->channels,channels_);InterlockedExchange(&state->sampleRate,static_cast<LONG>(rate_));
             InterlockedExchange(&state->formatSupported,supported_?1:0);
         }
@@ -145,9 +159,11 @@ public:
         else if(src!=dst)std::memcpy(dst,src,static_cast<size_t>(frames)*channels_*4);
         out[0]->u32ValidFrameCount=frames;
         out[0]->u32BufferFlags=(silent&&(!supported_||!settings.enabled))?BUFFER_SILENT:BUFFER_VALID;
-        if(state){InterlockedExchange(&state->producerPid,static_cast<LONG>(GetCurrentProcessId()));InterlockedIncrement64(&state->callbacks);InterlockedExchange64(&state->lastTick,GetTickCount64());
-            if(supported_&&settings.enabled&&processor_.healthy())InterlockedAdd64(&state->processedFrames,frames);
-            if(!processor_.healthy())InterlockedExchange(&state->formatSupported,0);}
+        for(auto* telemetry:{state,endpointTelemetry_.get()})if(telemetry){
+            InterlockedExchange(&telemetry->producerPid,static_cast<LONG>(GetCurrentProcessId()));InterlockedIncrement64(&telemetry->callbacks);InterlockedExchange64(&telemetry->lastTick,GetTickCount64());
+            if(supported_&&settings.enabled&&processor_.healthy())InterlockedAdd64(&telemetry->processedFrames,frames);
+            if(!processor_.healthy())InterlockedExchange(&telemetry->formatSupported,0);
+        }
     }
     UINT32 STDMETHODCALLTYPE CalcInputFrames(UINT32 frames) override{return frames;}
     UINT32 STDMETHODCALLTYPE CalcOutputFrames(UINT32 frames) override{return frames;}

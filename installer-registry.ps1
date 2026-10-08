@@ -1,11 +1,51 @@
 ﻿# Shared constants and helpers, dot-sourced by install.ps1 and setup-install.ps1.
-$micFilterVersion='0.5.3'
+$micFilterVersion='0.6.0'
 $ownClsid='{CDB2B27A-3B40-4B79-95AA-123C7136D873}'
 # CLSIDs registered by builds released as WavoFilter. Updates and uninstall remove them once unused.
 $legacyClsids=@('{54F530A1-D045-4C70-8999-11CF13E0DDAF}','{6C78EB4F-8AE4-4461-BE4A-989C7C14C7B2}')
 $effectSlot='{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2'
 $captureRoot='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture'
 $uninstallKeyPath='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MicFilter'
+
+# Version 2 keeps one original backup per endpoint. Read version 1 without losing its restore data.
+function Read-InstallationBackups([string]$Path) {
+    if(-not(Test-Path -LiteralPath $Path)){return}
+    $document=Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if($document.EndpointGuid){$entries=@($document)}
+    elseif($document.Version -eq 2){$entries=@($document.Endpoints)}
+    else{throw 'The microphone restore backup has an unsupported format. Nothing was changed.'}
+    $seen=@{}
+    foreach($entry in $entries){
+        if(-not $entry.EndpointGuid -or [guid]$entry.EndpointGuid -eq [guid]::Empty -or $null -eq $entry.PSObject.Properties['HadSlot']){throw 'The microphone restore backup is incomplete. Nothing was changed.'}
+        $id='{'+([guid]$entry.EndpointGuid).ToString()+'}'
+        if($seen.ContainsKey($id)){throw 'The microphone restore backup contains duplicate entries.'}
+        $seen[$id]=$true;$entry.EndpointGuid=$id;$entry
+    }
+}
+function Restore-EndpointSnapshot([Microsoft.Win32.RegistryKey]$Key,$Original) {
+    $current=$Key.GetValue($effectSlot)
+    if($current -eq $Original){return}
+    if($current -and $current -ne $ownClsid -and $legacyClsids -notcontains $current){throw 'Another application changed a microphone during setup. Its effect was kept.'}
+    if($Original){Set-EndpointEffect -Key $Key -Name $effectSlot -Value $Original}else{$Key.DeleteValue($effectSlot,$false)}
+}
+function Save-InstallationBackups([string]$Path,[object[]]$Entries) {
+    $document=[pscustomobject]@{Version=2;Endpoints=@($Entries)}
+    $temporary=$Path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
+    try{
+        [IO.File]::WriteAllText($temporary,($document | ConvertTo-Json -Depth 6),[Text.UTF8Encoding]::new($true))
+        if(Test-Path -LiteralPath $Path){[IO.File]::Replace($temporary,$Path,[NullString]::Value)}else{[IO.File]::Move($temporary,$Path)}
+    }finally{if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary -Force}}
+}
+function Assert-CompatibleEffectChain($Key) {
+    $ours=@($ownClsid)+$legacyClsids
+    $value=$Key.GetValue($effectSlot)
+    if($value -and $ours -notcontains $value){throw "Another audio app manages this microphone. Choose a different input, or remove that app's effect from this input and try again."}
+    foreach($slot in @(1,5,6,7)){
+        $value=$Key.GetValue('{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},'+$slot)
+        if($value){throw 'This microphone uses manufacturer audio enhancements. Choose another input; its existing effects have been kept.'}
+    }
+    if($Key.GetValue('{9e6136e0-57ab-4949-b57a-3627be142855},100')){throw 'This microphone uses a driver-managed effects chain. Choose another input; its existing effects have been kept.'}
+}
 
 # Registry value updates intentionally request QueryValues + SetValue only.
 # Windows audio endpoint keys need not allow CreateSubKey / WriteKey.

@@ -16,8 +16,8 @@ Use `-OutputDirectory dist-dev` with `build.ps1`, followed by `package.ps1 -Dist
 
 | File | Responsibility |
 | --- | --- |
-| `src/setup.cpp` | Single-file bootstrap, active endpoint enumeration, selection, elevation, protected extraction. |
-| `setup-install.ps1` | Installation transaction, real capture probe, shortcuts, Settings > Apps entry, rollback, cleanup of older files. |
+| `src/setup.cpp`, `src/setup_ui.h` | Single-file bootstrap, native setup wizard, microphone checklist, elevation, protected extraction. |
+| `setup-install.ps1` | Batch installation transaction, per-input capture probes, shortcuts, Settings > Apps entry, rollback, cleanup of older files. |
 | `install.ps1` | `Install`/`Remove` for one microphone (registry association, backup, COM/APO registration, control file) and full `Uninstall`. |
 | `installer-registry.ps1` | Shared version and IDs, minimum registry rights, exact effect-value updates, device restart, delete-or-schedule-at-restart. |
 | `src/tray.cpp` | Tray controls, selected endpoint, diagnostics and command-line control. |
@@ -30,8 +30,11 @@ Use `-OutputDirectory dist-dev` with `build.ps1`, followed by `package.ps1 -Dist
 | `src/audio_check.h` | WASAPI capture checks; counters and levels only. |
 | `build.ps1`, `package.ps1` | Compile binaries and embed their payload into the installer. |
 | `tests/` | Isolated DSP, resampling, COM, registry and package checks. |
+| `assets/micfilter.ico`, `scripts/generate-icon.py` | Embedded multi-size icon and deterministic generator (Python standard library). |
 
 Read [architecture](docs/architecture.md) before changing the audio path and [validation](docs/validation.md) before claiming device compatibility.
+
+Work on a branch from current `main`, run the isolated build and package checks, then open a pull request documenting the results before merging. Physical capture and listening remain required before publishing a release.
 
 ## Working rules
 

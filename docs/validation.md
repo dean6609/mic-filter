@@ -6,11 +6,15 @@
 
 The tested rates are 8, 16, 22.05, 44.1, 48, 96 and 192 kHz; tested channel counts are 1, 2, 4 and 8. These check the processing implementation, not every audio driver.
 
-`package.ps1 -RunTests` checks all nine embedded components, isolated extraction and PowerShell 5.1-compatible scripts. Registry tests use disposable HKCU fixtures and do not affect real devices.
+`package.ps1 -RunTests` checks all nine embedded components, isolated extraction, embedded icons, wizard multi-selection/blocked-input handling/profile choices and PowerShell 5.1-compatible scripts. Registry tests use disposable HKCU fixtures and do not affect real devices.
+
+`tests/multi-device-tests.ps1` executes the installer against private HKCU keys and temporary files, substituting only elevation, process and hardware/shortcut boundaries. It checks legacy-backup migration, idempotent installation on two inputs, saved disabled/Deep settings, conflict preservation, capture-failure rollback of a selected batch, individual removal and full uninstall. APO tests initialize two synthetic endpoint property stores and verify that each input's processing increments only its own telemetry. DSP checks include low-fundamental retention and mud/treble control for Deep, restrained Clear brightness, compression, limiting, all eight linked channels and switching all four presets.
 
 ## Physical checks
 
 Installation and voice capture have been checked with a Wavo POD on Windows x64. This is test hardware, not a brand restriction. More devices need physical checks before specific driver compatibility can be claimed.
+
+The 0.6.0 wizard, simultaneous physical capture on multiple microphones and revised voice profiles still need a physical installation/listening check. Isolated tests do not establish subjective voice quality or compatibility with every driver.
 
 Use a shared capture application with effects enabled, verify growing APO counters, and listen to actual speech. Check consonants, quiet word endings, pauses and the intended dictation app. Counters alone do not establish voice quality.
 

@@ -37,7 +37,7 @@ static_assert(sizeof(SharedState) == 64);
 // older effect DLL still loaded by audiodg.exe keeps working until Windows restarts.
 inline constexpr LONG kOptionsMagic = 0x504f464d;
 inline constexpr LONG kOptionsVersion = 1;
-inline constexpr LONG kVoicePresets = 3; // 0 Natural, 1 Clear, 2 Broadcast
+inline constexpr LONG kVoicePresets = 4; // 0 Natural, 1 Clear, 2 Broadcast, 3 Deep
 struct alignas(8) Options {
     LONG magic;
     LONG version;
@@ -68,7 +68,7 @@ inline std::wstring dataDirectory() {
 // Maps one fixed-size control file from the data directory and checks its magic and version.
 template<typename T, LONG Magic, LONG Version>
 class FileMapping {
-    const wchar_t* name_;
+    std::wstring name_;
     HANDLE file_ = INVALID_HANDLE_VALUE;
     HANDLE mapping_ = nullptr;
     T* state_ = nullptr;
@@ -98,6 +98,12 @@ public:
         state_=static_cast<T*>(MapViewOfFile(mapping_, FILE_MAP_READ|FILE_MAP_WRITE, 0, 0, sizeof(T)));
         if (!state_ || state_->magic!=Magic || state_->version!=Version) { close(); return false; }
         return true;
+    }
+    bool openEndpoint(const std::wstring& guid) {
+        GUID parsed{};if(FAILED(CLSIDFromString(guid.c_str(),&parsed))){close();return false;}
+        wchar_t canonical[40]{};StringFromGUID2(parsed,canonical,40);
+        name_=std::wstring(L"endpoints\\")+canonical+L".bin";
+        return open();
     }
 };
 struct StateMapping : FileMapping<SharedState,kMagic,kStateVersion> { StateMapping() : FileMapping(L"state.bin") {} };

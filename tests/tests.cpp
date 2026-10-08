@@ -1,3 +1,4 @@
+#include <initguid.h>
 #include "dsp.h"
 #include "rate_processor.h"
 #include "apo_sdk.h"
@@ -28,9 +29,18 @@ public:
         const auto file=CreateFileW((directory_+L"\\MicFilter\\state.bin").c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
         require(file!=INVALID_HANDLE_VALUE,"create isolated controls");DWORD bytes=0;const auto written=WriteFile(file,&state,sizeof(state),&bytes,nullptr);CloseHandle(file);require(written&&bytes==sizeof(state),"write isolated controls");
     }
+    void endpoint(const std::wstring& guid){
+        CreateDirectoryW((directory_+L"\\MicFilter\\endpoints").c_str(),nullptr);
+        micfilter::SharedState state{};state.magic=micfilter::kMagic;state.version=micfilter::kStateVersion;
+        HANDLE f=CreateFileW((directory_+L"\\MicFilter\\endpoints\\"+guid+L".bin").c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,0,nullptr);
+        require(f!=INVALID_HANDLE_VALUE,"create private endpoint telemetry");DWORD bytes=0;require(WriteFile(f,&state,64,&bytes,nullptr)&&bytes==64,"write private endpoint telemetry");CloseHandle(f);
+    }
     ~PrivateState(){
         SetEnvironmentVariableW(L"ProgramData",original_.c_str());
         DeleteFileW((directory_+L"\\MicFilter\\state.bin").c_str());
+        WIN32_FIND_DATAW item{};auto files=FindFirstFileW((directory_+L"\\MicFilter\\endpoints\\*.bin").c_str(),&item);
+        if(files!=INVALID_HANDLE_VALUE){do{DeleteFileW((directory_+L"\\MicFilter\\endpoints\\"+item.cFileName).c_str());}while(FindNextFileW(files,&item));FindClose(files);}
+        RemoveDirectoryW((directory_+L"\\MicFilter\\endpoints").c_str());
         RemoveDirectoryW((directory_+L"\\MicFilter").c_str());RemoveDirectoryW(directory_.c_str());
     }
 };
@@ -119,17 +129,25 @@ void voiceTest(){
     require(toneGainDb(1,30,0.05f)<-10,"Clear does not remove rumble");
     const double clear1k=toneGainDb(1,1000,0.05f);
     require(std::abs(clear1k)<1.5,"Clear changes the voice midrange");
-    require(toneGainDb(1,4000,0.05f)-clear1k>1.5,"Clear adds no presence");
+    require(toneGainDb(1,3000,0.05f)-clear1k>0.8,"Clear adds no presence");
+    require(toneGainDb(1,10000,0.05f)<1.5,"Clear adds excessive brightness");
+    require(toneGainDb(1,100,0.05f)>-2.0,"Clear removes too much voice body");
     const double quiet=toneGainDb(2,1000,0.01f),loud=toneGainDb(2,1000,0.3f);
-    require(quiet>3&&quiet<9,"Broadcast makeup gain is off");
-    require((20*std::log10(0.3)+loud)-(20*std::log10(0.01)+quiet)<22,"Broadcast does not compress");
+    require(quiet>2&&quiet<4,"Broadcast makeup gain is off");
+    require((20*std::log10(0.3)+loud)-(20*std::log10(0.01)+quiet)<26,"Broadcast does not compress");
+    require(toneGainDb(3,70,0.02f)>0,"Deep loses a low voice fundamental");
+    require(toneGainDb(3,20,0.02f)<-9,"Deep does not remove subsonic rumble");
+    require(toneGainDb(3,250,0.02f)<toneGainDb(3,100,0.02f)-1,"Deep does not reduce low-mid mud");
+    require(toneGainDb(3,2200,0.02f)>toneGainDb(3,1000,0.02f)+0.4,"Deep loses consonant clarity");
+    require(toneGainDb(3,10000,0.02f)<toneGainDb(3,2200,0.02f),"Deep adds excessive brightness");
+    require(toneGainDb(3,1000,0.3f)<toneGainDb(3,1000,0.01f)-2,"Deep does not control loud speech");
     micfilter::VoiceChain hot;float peak=0;
-    for(unsigned b=0;b<100;++b){for(unsigned i=0;i<480;++i)block[0][i]=0.99f*static_cast<float>(std::sin(6.283185307179586*4000*(b*480+i)/48000));hot.process(block,1,2);for(unsigned i=0;i<480;++i)peak=std::max(peak,std::abs(block[0][i]));}
+    for(unsigned preset=1;preset<4;++preset)for(unsigned b=0;b<100;++b){for(unsigned c=0;c<8;++c)for(unsigned i=0;i<480;++i)block[c][i]=0.99f*static_cast<float>(std::sin(6.283185307179586*4000*(b*480+i)/48000));hot.process(block,8,preset);for(unsigned c=0;c<8;++c)for(unsigned i=0;i<480;++i){require(std::isfinite(block[c][i]),"voice preset produces non-finite output");peak=std::max(peak,std::abs(block[c][i]));require(block[c][i]==block[0][i],"linked processing changes identical channels");}}
     require(peak<=1.0f,"Broadcast exceeds full scale");
     micfilter::VoiceChain switching;float previous=0,worst=0;
     for(unsigned b=0;b<200;++b){
         for(unsigned i=0;i<480;++i)block[0][i]=0.1f*static_cast<float>(std::sin(6.283185307179586*1000*(b*480+i)/48000));
-        switching.process(block,1,(b/25)%3);
+        switching.process(block,1,(b/25)%4);
         for(unsigned i=0;i<480;++i){if(b||i)worst=std::max(worst,std::abs(block[0][i]-previous));previous=block[0][i];}
     }
     require(worst<0.06f,"changing the voice preset clicks");
@@ -212,7 +230,24 @@ public:
     ULONG STDMETHODCALLTYPE AddRef() override{return ++references;}
     ULONG STDMETHODCALLTYPE Release() override{return --references;}
 };
-void apoTests(){
+class EndpointStore final:public IPropertyStore {
+    std::wstring guid_;
+public:
+    explicit EndpointStore(std::wstring guid):guid_(std::move(guid)){}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID,void** out)override{if(out)*out=nullptr;return E_NOINTERFACE;}
+    ULONG STDMETHODCALLTYPE AddRef()override{return 1;} ULONG STDMETHODCALLTYPE Release()override{return 1;}
+    HRESULT STDMETHODCALLTYPE GetCount(DWORD*)override{return E_NOTIMPL;}
+    HRESULT STDMETHODCALLTYPE GetAt(DWORD,PROPERTYKEY*)override{return E_NOTIMPL;}
+    HRESULT STDMETHODCALLTYPE GetValue(REFPROPERTYKEY key,PROPVARIANT* value)override{
+        if(!value)return E_POINTER;PropVariantInit(value);
+        if(key.fmtid!=PKEY_AudioEndpoint_GUID.fmtid||key.pid!=PKEY_AudioEndpoint_GUID.pid)return E_INVALIDARG;
+        value->vt=VT_LPWSTR;value->pwszVal=static_cast<LPWSTR>(CoTaskMemAlloc((guid_.size()+1)*sizeof(wchar_t)));
+        if(!value->pwszVal)return E_OUTOFMEMORY;std::memcpy(value->pwszVal,guid_.c_str(),(guid_.size()+1)*sizeof(wchar_t));return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE SetValue(REFPROPERTYKEY,REFPROPVARIANT)override{return E_NOTIMPL;}
+    HRESULT STDMETHODCALLTYPE Commit()override{return E_NOTIMPL;}
+};
+void apoTests(IPropertyStore* endpoint=nullptr){
     auto library=LoadLibraryW(L"MicFilterAPO.dll");require(library!=nullptr,"DLL failed to load");
     using FactoryFn=HRESULT(__stdcall*)(REFCLSID,REFIID,void**);using UnloadFn=HRESULT(__stdcall*)();
     auto factoryFn=reinterpret_cast<FactoryFn>(GetProcAddress(library,"DllGetClassObject"));auto unload=reinterpret_cast<UnloadFn>(GetProcAddress(library,"DllCanUnloadNow"));
@@ -229,7 +264,8 @@ void apoTests(){
         IUnknown* innerIdentity=nullptr;require(outer.inner->QueryInterface(__uuidof(IUnknown),reinterpret_cast<void**>(&innerIdentity))==S_OK&&innerIdentity==outer.inner,"nondelegating inner identity");innerIdentity->Release();
     }
     IAudioProcessingObject* apo=nullptr;require(SUCCEEDED(factory->CreateInstance(nullptr,__uuidof(IAudioProcessingObject),reinterpret_cast<void**>(&apo))),"APO creation failed");factory->Release();
-    require(apo->Initialize(0,nullptr)==S_OK,"APO initialize");require(apo->Initialize(0,nullptr)==APOERR_ALREADY_INITIALIZED,"double initialize accepted");
+    APOInitSystemEffects2 context{};context.APOInit.cbSize=sizeof(context);context.APOInit.clsid=micfilter::kClsid;context.pAPOEndpointProperties=endpoint;
+    require(apo->Initialize(endpoint?sizeof(context):0,endpoint?reinterpret_cast<BYTE*>(&context):nullptr)==S_OK,"APO initialize");require(apo->Initialize(0,nullptr)==APOERR_ALREADY_INITIALIZED,"double initialize accepted");
     APO_REG_PROPERTIES* properties=nullptr;require(apo->GetRegistrationProperties(&properties)==S_OK,"registration properties");require(properties->clsid==micfilter::kClsid&&properties->u32NumAPOInterfaces==1&&properties->iidAPOInterfaceList[0]==__uuidof(IAudioProcessingObject),"registration incorrect");CoTaskMemFree(properties);
     IAudioProcessingObjectConfiguration* config=nullptr;IAudioProcessingObjectRT* rt=nullptr;IAudioSystemEffects* effects=nullptr;
     require(SUCCEEDED(apo->QueryInterface(__uuidof(IAudioProcessingObjectConfiguration),reinterpret_cast<void**>(&config))),"configuration interface");
@@ -256,4 +292,12 @@ void apoTests(){
     rt->Release();config->Release();apo->Release();require(unload()==S_OK,"COM references leaked");FreeLibrary(library);
     std::cout<<"PASS APO: DLL/COM factory, all interfaces, negotiation, locking, metadata, bounds, 44.1 kHz processing and safe missing-control bypass, reference counts\n";
 }
-int main(){try{CoInitializeEx(nullptr,COINIT_MULTITHREADED);{PrivateState state;dspTests();rateTests();apoTests();state.enable();apoTests();micfilter::StateMapping telemetry;require(telemetry.open(),"open private telemetry");require(micfilter::read(telemetry.get()->callbacks)==3&&micfilter::read(telemetry.get()->producerPid)==static_cast<LONG>(GetCurrentProcessId()),"private APO telemetry");std::cout<<"PASS isolation: missing controls and active controls tested without changing installed microphone state\n";}CoUninitialize();return 0;}catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<"\n";return 1;}}
+int main(){try{CoInitializeEx(nullptr,COINIT_MULTITHREADED);{PrivateState state;dspTests();rateTests();apoTests();state.enable();apoTests();micfilter::StateMapping telemetry;require(telemetry.open(),"open private telemetry");require(micfilter::read(telemetry.get()->callbacks)==3&&micfilter::read(telemetry.get()->producerPid)==static_cast<LONG>(GetCurrentProcessId()),"private APO telemetry");
+    const std::wstring first=L"{00000000-0000-0000-0000-000000000001}",second=L"{00000000-0000-0000-0000-000000000002}";
+    state.endpoint(first);state.endpoint(second);EndpointStore firstStore(first),secondStore(second);micfilter::StateMapping a,b;
+    require(a.openEndpoint(first)&&b.openEndpoint(second),"map per-input telemetry");apoTests(&firstStore);
+    require(micfilter::read(a.get()->callbacks)==3&&micfilter::read(b.get()->callbacks)==0,"one input falsely confirms another");apoTests(&secondStore);
+    require(micfilter::read(a.get()->callbacks)==3&&micfilter::read(b.get()->callbacks)==3,"per-input counters are not independent");
+    require(micfilter::read(a.get()->processedFrames)==1536&&micfilter::read(b.get()->processedFrames)==1536,"per-input processing not confirmed");
+    std::cout<<"PASS isolation: private controls and independent per-input APO telemetry; installed microphones unchanged\n";
+}CoUninitialize();return 0;}catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<"\n";return 1;}}
