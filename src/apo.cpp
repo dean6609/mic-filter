@@ -17,7 +17,7 @@ bool format(IAudioMediaType* media,UNCOMPRESSEDAUDIOFORMAT& out) {
         out.fFramesPerSecond>=8000.0f && out.fFramesPerSecond<=192000.0f;
 }
 class Apo final:public IAudioProcessingObject,public IAudioProcessingObjectRT,
-                public IAudioProcessingObjectConfiguration,public IAudioSystemEffects {
+                public IAudioProcessingObjectConfiguration,public IAudioSystemEffects2 {
     class InnerUnknown final:public IUnknown {
         Apo& owner_;
     public:
@@ -36,13 +36,28 @@ class Apo final:public IAudioProcessingObject,public IAudioProcessingObjectRT,
     micfilter::OptionsMapping options_;
     micfilter::RateProcessor processor_;
     micfilter::Trace trace_;
+    SRWLOCK effectsLock_=SRWLOCK_INIT;
+    HANDLE effectsEvent_=nullptr,effectsTimer_=nullptr;
+    bool reportedEnabled_=false;
+    static void CALLBACK effectsChanged(void* context,BOOLEAN){
+        auto& self=*static_cast<Apo*>(context);
+        AcquireSRWLockExclusive(&self.effectsLock_);
+        const bool enabled=micfilter::snapshot(self.mapping_.get()).enabled;
+        if(enabled!=self.reportedEnabled_){self.reportedEnabled_=enabled;if(self.effectsEvent_)SetEvent(self.effectsEvent_);}
+        ReleaseSRWLockExclusive(&self.effectsLock_);
+    }
     HRESULT report(const wchar_t* step,HRESULT result){
         std::wostringstream log;log<<step<<L" HRESULT=0x"<<std::hex<<static_cast<unsigned long>(result);trace_.write(log.str());
         return result;
     }
 public:
     explicit Apo(IUnknown* outer=nullptr):outer_(outer){InterlockedIncrement(&objects);trace_.write(L"APO constructed aggregated="+std::to_wstring(outer!=nullptr));}
-    ~Apo(){InterlockedDecrement(&objects);}
+    ~Apo(){
+        // Stop notifications before unmapping controls; no timer/lock work runs in APOProcess.
+        if(effectsTimer_)DeleteTimerQueueTimer(nullptr,effectsTimer_,INVALID_HANDLE_VALUE);
+        if(effectsEvent_)CloseHandle(effectsEvent_);
+        InterlockedDecrement(&objects);
+    }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) override {
         return outer_?outer_->QueryInterface(iid,out):nonDelegatingQueryInterface(iid,out);
     }
@@ -55,6 +70,7 @@ public:
         else if(iid==__uuidof(IAudioProcessingObjectRT)) *out=static_cast<IAudioProcessingObjectRT*>(this);
         else if(iid==__uuidof(IAudioProcessingObjectConfiguration)) *out=static_cast<IAudioProcessingObjectConfiguration*>(this);
         else if(iid==__uuidof(IAudioSystemEffects)) *out=static_cast<IAudioSystemEffects*>(this);
+        else if(iid==__uuidof(IAudioSystemEffects2)) *out=static_cast<IAudioSystemEffects2*>(this);
         else return E_NOINTERFACE;
         AddRef();return S_OK;
     }
@@ -84,6 +100,26 @@ public:
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE Reset() override {processor_.reset();return S_OK;}
+    HRESULT STDMETHODCALLTYPE GetEffectsList(GUID** effects,UINT* count,HANDLE changed) override {
+        if(!effects||!count)return E_POINTER;
+        *effects=nullptr;*count=0;
+        if(!initialized_)return APOERR_NOT_INITIALIZED;
+        HANDLE duplicate=nullptr;
+        if(changed&&!DuplicateHandle(GetCurrentProcess(),changed,GetCurrentProcess(),&duplicate,EVENT_MODIFY_STATE,FALSE,0))return HRESULT_FROM_WIN32(GetLastError());
+        AcquireSRWLockExclusive(&effectsLock_);
+        if(effectsEvent_)CloseHandle(effectsEvent_);effectsEvent_=duplicate;
+        reportedEnabled_=micfilter::snapshot(mapping_.get()).enabled;
+        HRESULT result=S_OK;
+        if(duplicate&&!effectsTimer_&&!CreateTimerQueueTimer(&effectsTimer_,nullptr,effectsChanged,this,250,250,WT_EXECUTEDEFAULT)){
+            result=HRESULT_FROM_WIN32(GetLastError());CloseHandle(effectsEvent_);effectsEvent_=nullptr;
+        }
+        if(SUCCEEDED(result)&&reportedEnabled_){
+            *effects=static_cast<GUID*>(CoTaskMemAlloc(sizeof(GUID)));
+            if(*effects){**effects=kNoiseSuppressionEffect;*count=1;}else result=E_OUTOFMEMORY;
+        }
+        ReleaseSRWLockExclusive(&effectsLock_);
+        return result;
+    }
     HRESULT STDMETHODCALLTYPE GetLatency(HNSTIME* time) override {
         if(!time)return E_POINTER;
         // 10 ms buffering plus RNNoise's 20 ms (overlap/add and delayed_X). Bypass has zero delay.

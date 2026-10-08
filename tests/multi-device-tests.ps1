@@ -31,10 +31,14 @@ function Run-Fixture([string]$Action,[string]$Endpoint,[int]$Expected=0){
     $code=$process.ExitCode;$process.Dispose()
     Assert ($code -eq $Expected) ('Isolated '+$Action+' failed: '+[IO.File]::ReadAllText($report))
 }
-function Slot([string]$Endpoint){(Get-Item -LiteralPath ($registry+'\Capture\'+$Endpoint+'\FxProperties')).GetValue($effectSlot)}
+function Slot([string]$Endpoint){
+    $key=Get-Item -LiteralPath ($registry+'\Capture\'+$Endpoint+'\FxProperties')
+    $value=$key.GetValue($streamEffectSlot);if($value){return $value};return $key.GetValue($effectSlot)
+}
 try{
     New-Item -ItemType Directory -Path $source,$program,$data,(Join-Path $privateRoot 'Links') -Force | Out-Null
-    foreach($name in @('MicFilter.exe','MicFilterAPO.dll','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt','GETTING_STARTED.txt')){Copy-Item -LiteralPath (Join-Path $DistributionDirectory $name) -Destination $source}
+    foreach($name in @('MicFilter.exe','MicFilterAPO.dll','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){Copy-Item -LiteralPath (Join-Path $DistributionDirectory $name) -Destination $source}
+    Copy-Item -LiteralPath (Join-Path $testRoot 'GETTING_STARTED.txt') -Destination $source
     # Run the production scripts against private HKCU keys and folders. The only replacements
     # are environment access, elevation, process enumeration and hardware/shortcut boundaries.
     # No production switch permits bypassing elevation or redirecting installed device keys.
@@ -82,7 +86,21 @@ function New-FixtureShell {
     $associationSlot='{9e6136e0-57ab-4949-b57a-3627be142855},100'
     New-ItemProperty -LiteralPath ($registry+'\Capture\'+$first+'\FxProperties') -Name $discoverySlot -Value $discoveryProxy -Force | Out-Null
     New-ItemProperty -LiteralPath ($registry+'\Capture\'+$second+'\FxProperties') -Name $associationSlot -Value 'test-driver-association' -Force | Out-Null
+    # Existing releases installed LFX on modern endpoints. Migrate without backing up ourselves.
+    New-Item -ItemType Directory -Path (Split-Path $backup -Parent) -Force | Out-Null
+    $originalModes=@('{FC1CFC9B-B9D6-4CFA-B5E0-4BB2166878B2}')
+    $modernKey=Open-EndpointEffectsKey -SubKey ($fixture+'\Capture\'+$first+'\FxProperties') -Hive ([Microsoft.Win32.RegistryHive]::CurrentUser)
+    try{
+        $modernKey.SetValue($effectSlot,$ownClsid,[Microsoft.Win32.RegistryValueKind]::String)
+        $modernKey.SetValue($streamModesSlot,[string[]]$originalModes,[Microsoft.Win32.RegistryValueKind]::MultiString)
+    }finally{$modernKey.Dispose()}
+    [IO.File]::WriteAllText($backup,([pscustomobject]@{EndpointGuid=$first;HadSlot=$false;PreviousSlot=$null} | ConvertTo-Json),$utf8)
     Run-Fixture Install $first
+    $modernKey=Get-Item -LiteralPath ($registry+'\Capture\'+$first+'\FxProperties')
+    Assert ($modernKey.GetValue($streamEffectSlot) -eq $ownClsid -and -not $modernKey.GetValue($effectSlot)) 'A modern endpoint was attached to the ignored legacy slot.'
+    Assert ($modernKey.GetValueKind($streamModesSlot) -eq [Microsoft.Win32.RegistryValueKind]::MultiString -and (Same-Values $modernKey.GetValue($streamModesSlot) $streamModes)) 'Modern capture modes were not registered as a multi-string.'
+    $migrated=@(Read-InstallationBackups $backup)[0]
+    Assert (-not $migrated.HadSlot -and $migrated.StreamValues.Count -eq 2 -and -not $migrated.StreamValues[0].Exists) 'Migration lost the original restore configuration.'
     Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes((Join-Path $data 'MicFilter\options.bin')),8) -eq 0) 'A first installation did not default to Natural.'
     # A 0.5 backup must migrate without making MicFilter its own original effect.
     $legacy=@(Read-InstallationBackups $backup)[0]
@@ -102,6 +120,10 @@ function New-FixtureShell {
     Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes($stateFile),8) -eq 0) 'Adding/updating an input enabled a disabled filter.'
     Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes($optionsFile),8) -eq 3) 'The saved Deep profile was lost.'
     $other='{00000000-0000-0000-0000-000000000099}'
+    New-ItemProperty -LiteralPath ($registry+'\Capture\'+$third+'\FxProperties') -Name $streamEffectSlot -Value $other -Force | Out-Null
+    Run-Fixture Install $third 1
+    Assert ((Slot $third) -eq $other -and [IO.File]::ReadAllText($backup) -eq $saved) 'A foreign stream effect was replaced.'
+    Remove-ItemProperty -LiteralPath ($registry+'\Capture\'+$third+'\FxProperties') -Name $streamEffectSlot
     New-ItemProperty -LiteralPath ($registry+'\Capture\'+$third+'\FxProperties') -Name $discoverySlot -Value $other -Force | Out-Null
     Run-Fixture Install $third 1
     Assert (-not(Slot $third) -and [IO.File]::ReadAllText($backup) -eq $saved) 'A real processing-effect conflict was ignored.'
@@ -138,7 +160,7 @@ try {
     $process.Dispose();Assert (Test-Path -LiteralPath $summary) ('The batch did not produce its summary: '+$errorOutput.Result)
     Assert ([IO.File]::ReadAllText($summary) -match 'could not capture audio') ('The batch did not reach capture verification: '+[IO.File]::ReadAllText($summary))
     Assert ((Slot $first) -eq $ownClsid -and (Slot $second) -eq $ownClsid -and -not(Slot $fourth)) ('Batch rollback did not restore each selected input: '+$output.Result+$errorOutput.Result)
-    Assert ([IO.File]::ReadAllText($backup) -eq $saved) 'Batch rollback lost the original backup document.'
+    Assert ([IO.File]::ReadAllText($backup) -eq $saved) ('Batch rollback lost the original backup document: '+$output.Result+$errorOutput.Result)
     $runtimeFiles[0].Position=8;$enabled=New-Object byte[] 4;$null=$runtimeFiles[0].Read($enabled,0,4)
     $runtimeFiles[1].Position=8;$voice=New-Object byte[] 4;$null=$runtimeFiles[1].Read($voice,0,4)
     Assert ([BitConverter]::ToInt32($enabled,0) -eq 0 -and [BitConverter]::ToInt32($voice,0) -eq 3) 'Open runtime handles did not see restored settings.'
@@ -159,6 +181,8 @@ try {
     Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes($stateFile),8) -eq 0 -and [BitConverter]::ToInt32([IO.File]::ReadAllBytes($optionsFile),8) -eq 3) 'Batch rollback lost disabled/profile settings.'
     Run-Fixture Remove $first
     Assert (-not(Slot $first) -and (Slot $second) -eq $ownClsid -and (Test-Path -LiteralPath $class)) 'Removing one input broke the other.'
+    $modernKey=Get-Item -LiteralPath ($registry+'\Capture\'+$first+'\FxProperties')
+    Assert ($modernKey.GetValueKind($streamModesSlot) -eq [Microsoft.Win32.RegistryValueKind]::MultiString -and (Same-Values $modernKey.GetValue($streamModesSlot) $originalModes)) 'Removal did not restore the original processing modes and type.'
     Assert (@(Read-InstallationBackups $backup).Count -eq 1) 'Removal did not keep the remaining backup.'
     Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes($stateFile),8) -eq 0) 'Removing one changed shared enable state.'
     Run-Fixture Remove $second

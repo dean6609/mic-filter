@@ -272,6 +272,23 @@ void apoTests(IPropertyStore* endpoint=nullptr){
     require(SUCCEEDED(apo->QueryInterface(__uuidof(IAudioProcessingObjectConfiguration),reinterpret_cast<void**>(&config))),"configuration interface");
     require(SUCCEEDED(apo->QueryInterface(__uuidof(IAudioProcessingObjectRT),reinterpret_cast<void**>(&rt))),"realtime interface");
     require(SUCCEEDED(apo->QueryInterface(__uuidof(IAudioSystemEffects),reinterpret_cast<void**>(&effects))),"system effect interface");effects->Release();
+    IAudioSystemEffects2* modeEffects=nullptr;
+    micfilter::StateMapping effectsMapping;effectsMapping.open();
+    require(SUCCEEDED(apo->QueryInterface(__uuidof(IAudioSystemEffects2),reinterpret_cast<void**>(&modeEffects))),"mode-aware system effect interface");
+    GUID* effectIds=nullptr;UINT effectCount=99;
+    require(modeEffects->GetEffectsList(nullptr,&effectCount,nullptr)==E_POINTER,"effects list accepted null output");
+    HANDLE changed=CreateEventW(nullptr,FALSE,FALSE,nullptr);require(changed!=nullptr,"effects event");
+    require(modeEffects->GetEffectsList(&effectIds,&effectCount,changed)==S_OK,"mode-aware effects discovery");
+    require(effectCount==(effectsMapping.get()?1U:0U),"effects discovery differs from enabled controls");
+    if(effectCount)require(effectIds[0]==kNoiseSuppressionEffect,"incorrect noise suppression effect identity");CoTaskMemFree(effectIds);
+    if(effectsMapping.get()){
+        InterlockedExchange(&effectsMapping.get()->enabled,0);
+        require(WaitForSingleObject(changed,2000)==WAIT_OBJECT_0,"effects change did not notify Windows");
+        require(modeEffects->GetEffectsList(&effectIds,&effectCount,nullptr)==S_OK&&effectCount==0&&effectIds==nullptr,"disabled effect reported active");
+        InterlockedExchange(&effectsMapping.get()->enabled,1);
+        require(WaitForSingleObject(changed,500)==WAIT_TIMEOUT,"removed notification handle still signalled");
+    }else require(modeEffects->GetEffectsList(&effectIds,&effectCount,nullptr)==S_OK,"clear effects notification");
+    CloseHandle(changed);modeEffects->Release();
     Media media(2,48000);IAudioMediaType* suggested=nullptr;require(apo->IsInputFormatSupported(nullptr,&media,&suggested)==S_OK&&suggested==&media,"format negotiation");suggested->Release();
     auto input=signal(512,2);std::vector<float> output(input.size(),0);
     APO_CONNECTION_DESCRIPTOR inDesc{APO_CONNECTION_BUFFER_TYPE_EXTERNAL,reinterpret_cast<UINT_PTR>(input.data()),512,&media,APO_CONNECTION_DESCRIPTOR_SIGNATURE};

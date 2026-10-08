@@ -2,6 +2,8 @@
 
 ## 0.6.0 — 2026-10-08
 
+- Fix legacy-only registration being ignored on modern capture endpoints, including Bluetooth hands-free inputs. Setup uses a mode-aware stream effect on modern graphs, migrates existing associations safely and restores original stream properties and types on rollback/removal. The tray recognizes both routes; targeted restart now includes a uniquely matching Bluetooth hands-free function.
+
 - Fix updates failing to read saved voice options while the tray or audio host holds the settings file open. Setup shares read/write access and preserves saved settings through update and rollback.
 - Restore automatic selection and installation when only one connected, enabled microphone is found. Compatibility checks still apply; multiple microphones keep the console checklist.
 - Simple colored console setup with persistent microphone checks, number-based multiple selection and plain progress/results. Fresh installs default to Natural without a voice prompt; updates keep the saved profile. Setup explains single-click on/off and later voice changes from the tray.

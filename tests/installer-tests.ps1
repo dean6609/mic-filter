@@ -25,6 +25,16 @@ try{
     Set-EndpointEffect -Key $key -Name $effectSlot -Value '{00000000-0000-0000-0000-000000000099}'
     $rejected=$false;try{Restore-EndpointSnapshot $key $null}catch{$rejected=$true}
     if(-not $rejected -or $key.GetValue($effectSlot) -ne '{00000000-0000-0000-0000-000000000099}'){throw 'Batch restoration overwrote a concurrent third-party effect.'}
+    $key.DeleteValue($effectSlot,$false)
+    $streamSnapshot=@(Get-StreamSnapshot $key)
+    Set-EndpointEffect -Key $key -Name $streamEffectSlot -Value $ownClsid
+    $key.SetValue($streamModesSlot,[string[]]$streamModes,[Microsoft.Win32.RegistryValueKind]::MultiString)
+    Restore-EndpointSnapshot $key $null $streamSnapshot
+    if($key.GetValue($streamEffectSlot) -or $key.GetValue($streamModesSlot)){throw 'Rollback left new stream-effect properties.'}
+    Set-EndpointEffect -Key $key -Name $effectSlot -Value $ownClsid
+    Set-EndpointEffect -Key $key -Name $streamEffectSlot -Value '{00000000-0000-0000-0000-000000000099}'
+    $rejected=$false;try{Restore-EndpointSnapshot $key $null $streamSnapshot}catch{$rejected=$true}
+    if(-not $rejected -or $key.GetValue($effectSlot) -ne $ownClsid -or $key.GetValue($streamEffectSlot) -ne '{00000000-0000-0000-0000-000000000099}'){throw 'Modern rollback partially changed an endpoint with a concurrent foreign effect.'}
     $fresh=Open-EndpointEffectsKey -SubKey ($fixture+'\FxProperties') -Hive ([Microsoft.Win32.RegistryHive]::CurrentUser) -CreateIfMissing
     try{Set-EndpointEffect -Key $fresh -Name 'effect' -Value 'test';if($fresh.GetValue('effect') -ne 'test'){throw 'Could not create an initially missing effect key.'}}finally{$fresh.Dispose()}
 }finally{if($key){$key.Dispose()};$base.DeleteSubKeyTree($fixture,$false);$base.Dispose()}

@@ -68,8 +68,11 @@ void availability(Device& device){
         if(!hasValue(name))continue;
         wchar_t effect[128]{};DWORD effectBytes=sizeof(effect);
         // Microsoft's discovery-only proxy reports hardware effects; it does not filter samples.
-        const bool discoveryOnly=slotIndex==7&&RegGetValueW(key,nullptr,name.c_str(),RRF_RT_REG_SZ,nullptr,effect,&effectBytes)==ERROR_SUCCESS&&_wcsicmp(effect,L"{889C03C8-ABAD-4004-BF0A-BC7BB825E166}")==0;
-        if(!discoveryOnly){device.available=false;device.status=L"Uses manufacturer audio enhancements";}
+        const auto read=RegGetValueW(key,nullptr,name.c_str(),RRF_RT_REG_SZ,nullptr,effect,&effectBytes);
+        const bool discoveryOnly=slotIndex==7&&read==ERROR_SUCCESS&&_wcsicmp(effect,L"{889C03C8-ABAD-4004-BF0A-BC7BB825E166}")==0;
+        const bool ownedStream=slotIndex==5&&read==ERROR_SUCCESS&&_wcsicmp(effect,micfilter::kClsidText)==0;
+        if(ownedStream){device.installed=true;device.status=L"Already installed - safe to update";}
+        else if(!discoveryOnly){device.available=false;device.status=L"Uses manufacturer audio enhancements";}
     }
     // A driver association alone is not proof of a conflicting processing APO.
     // Leave it intact and verify actual capture/our own processing after installation.

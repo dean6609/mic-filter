@@ -32,7 +32,7 @@ The first installation enables the filter and configures the icon to show when W
 
 An input managed by another audio app or a manufacturer effects chain is shown as unavailable. Choose another input, or remove the other app's effect from that input and run setup again. MicFilter updates its own existing effect safely and preserves other applications' effects.
 
-Windows' discovery-only effects proxy and driver association metadata are kept; their presence alone no longer blocks setup. Capture and per-input processing checks still determine whether the filter is confirmed.
+Windows' discovery-only effects proxy and driver association metadata are kept; their presence alone no longer blocks setup. Setup chooses the processing route used by the driver, including the modern route on Bluetooth hands-free inputs, and preserves the original configuration during migration. Capture and per-input processing checks still determine whether the filter is confirmed.
 
 ## Your filter, your controls
 

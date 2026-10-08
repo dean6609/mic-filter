@@ -51,7 +51,7 @@ try {
     foreach($endpointText in $endpointTexts){
         $fxSubKey='SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\'+$endpointText+'\FxProperties'
         $effectsKey=Open-EndpointEffectsKey -SubKey $fxSubKey -CreateIfMissing
-        try{Assert-CompatibleEffectChain $effectsKey;$snapshots+=[pscustomobject]@{Endpoint=$endpointText;Slot=$effectsKey.GetValue($effectSlot)}}
+        try{Assert-CompatibleEffectChain $effectsKey;$snapshots+=[pscustomobject]@{Endpoint=$endpointText;Slot=$effectsKey.GetValue($effectSlot);StreamValues=@(Get-StreamSnapshot $effectsKey)}}
         finally{$effectsKey.Dispose();$effectsKey=$null}
     }
     if(Test-Path -LiteralPath $statePath){$oldControls=Read-State}
@@ -165,7 +165,7 @@ try {
             $restoreErrors=@()
             foreach($snapshot in $snapshots){
                 $fxSubKey='SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\'+$snapshot.Endpoint+'\FxProperties'
-                try{$effectsKey=Open-EndpointEffectsKey -SubKey $fxSubKey;Restore-EndpointSnapshot $effectsKey $snapshot.Slot}
+                try{$effectsKey=Open-EndpointEffectsKey -SubKey $fxSubKey;Restore-EndpointSnapshot $effectsKey $snapshot.Slot $snapshot.StreamValues}
                 catch{$restoreErrors+=$_.Exception.Message}
                 finally{if($effectsKey){$effectsKey.Dispose();$effectsKey=$null}}
             }

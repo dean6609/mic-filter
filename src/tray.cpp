@@ -99,9 +99,11 @@ void enumerate(){
     // Prefer the user's tray selection, then any connected input actually attached to our APO.
     for(const auto& d:devices){
         const auto path=L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\"+d.guid+L"\\FxProperties";
-        wchar_t value[128]{};DWORD bytes=sizeof(value);
-        if(RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,micfilter::kClsidText)==0){
-            if(selected.id.empty()||_wcsicmp(d.guid.c_str(),previous.c_str())==0)selected=d;
+        for(const auto* slot:{L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},5"}){
+            wchar_t value[128]{};DWORD bytes=sizeof(value);
+            if(RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),slot,RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,micfilter::kClsidText)==0){
+                if(selected.id.empty()||_wcsicmp(d.guid.c_str(),previous.c_str())==0)selected=d;break;
+            }
         }
     }
     if(configuredGuid.empty()&&devices.size()==1)selected=devices.front();
@@ -110,8 +112,11 @@ void enumerate(){
 bool installed(const Device& device){
     if(device.guid.empty())return false;
     auto path=L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\"+device.guid+L"\\FxProperties";
-    wchar_t value[128]{};DWORD bytes=sizeof(value);
-    return RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,micfilter::kClsidText)==0;
+    for(const auto* slot:{L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},5"}){
+        wchar_t value[128]{};DWORD bytes=sizeof(value);
+        if(RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),slot,RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,micfilter::kClsidText)==0)return true;
+    }
+    return false;
 }
 bool installed(){return installed(selected);}
 bool componentizedEndpoint(){
