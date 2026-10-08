@@ -137,6 +137,10 @@ void verifyIcons(const std::wstring& path){
 }
 namespace {
 std::vector<size_t> chooseMicrophones(const std::vector<Device>& devices){
+    if(devices.size()==1&&devices.front().available){
+        ok(L"Only one microphone found - selected automatically: "+devices.front().name);
+        return {0};
+    }
     std::vector<bool> available,checked;
     const auto ready=std::count_if(devices.begin(),devices.end(),[](const auto& device){return device.available;});
     for(const auto& device:devices){available.push_back(device.available);checked.push_back(device.available&&(device.installed||ready==1));}
@@ -173,12 +177,14 @@ int wmain(int argc,wchar_t** argv){
         logLine(std::wstring(L"Setup closed unexpectedly, exception ")+code);return EXCEPTION_CONTINUE_SEARCH;});
     logLine(std::wstring(L"Started: ")+GetCommandLineW()+(admin()?L" (administrator)":L""));
     _setmode(_fileno(stdout),_O_U16TEXT);_setmode(_fileno(stderr),_O_U16TEXT);SetConsoleTitleW(L"MicFilter - installation");
-    bool noPause=false,selfTest=false,testConsole=false,list=false,checkInputs=false,uninstall=false;std::vector<std::wstring> requested;int preset=-1;
+    bool noPause=false,selfTest=false,testConsole=false,testSingle=false,testBlocked=false,list=false,checkInputs=false,uninstall=false;std::vector<std::wstring> requested;int preset=-1;
     for(int i=1;i<argc;++i){
         const std::wstring arg=argv[i];
         if(arg==L"--no-pause")noPause=true;else if(arg==L"--self-test")selfTest=true;else if(arg==L"--list-devices")list=true;else if(arg==L"--uninstall")uninstall=true;
         else if(arg==L"--check-inputs")list=checkInputs=true;
         else if(arg==L"--test-console")selfTest=testConsole=true;
+        else if(arg==L"--test-console-single")selfTest=testConsole=testSingle=true;
+        else if(arg==L"--test-console-blocked")selfTest=testConsole=testSingle=testBlocked=true;
         else if(arg==L"--preset"&&i+1<argc){const std::wstring value=argv[++i];if(value.size()!=1||value[0]<L'0'||value[0]>L'3'){std::wcerr<<L"Invalid voice choice.\n";return 2;}preset=value[0]-L'0';}
         else if(arg==L"--endpoint"&&i+1<argc){GUID guid{};if(FAILED(CLSIDFromString(argv[++i],&guid))){std::wcerr<<L"Invalid microphone identifier.\n";return 2;}wchar_t text[40]{};StringFromGUID2(guid,text,40);if(std::find(requested.begin(),requested.end(),text)==requested.end())requested.push_back(text);}
         else{std::wcerr<<L"Unknown option.\n";return 2;}
@@ -205,7 +211,10 @@ int wmain(int argc,wchar_t** argv){
             verifyIcons(staging+L"\\MicFilter.exe");
             std::wcout<<L"PASS package: 9 resources, EXE/DLL/icons, persistent multi-input checklist; no microphone changes.\n";result=0;
             if(testConsole){
-                const auto choices=chooseMicrophones({{L"",L"Desktop microphone",L"",L"Ready to install",true,false},{L"",L"Headset microphone",L"",L"Ready to install",true,false},{L"",L"Other microphone",L"",L"Uses another audio effect",false,false}});
+                std::vector<Device> fixture{{L"",L"Desktop microphone",L"",L"Ready to install",true,false},{L"",L"Headset microphone",L"",L"Ready to install",true,false},{L"",L"Other microphone",L"",L"Uses another audio effect",false,false}};
+                if(testSingle)fixture.resize(1);
+                if(testBlocked){fixture.front().available=false;fixture.front().status=L"Uses another audio effect";}
+                const auto choices=chooseMicrophones(fixture);
                 std::wcout<<L"TEST console selection=";
                 for(size_t i=0;i<choices.size();++i){if(i)std::wcout<<L",";std::wcout<<choices[i]+1;}
                 std::wcout<<L" voice=default\n";

@@ -2,7 +2,9 @@ MicFilter 0.6.0 — Native microphone noise suppression for Windows
 
 INSTALL
 Double-click MicFilter-Setup.exe and accept the Windows administrator prompt.
-In the colored console, type numbers to check/uncheck microphones (for example
+With only one connected, enabled microphone, setup selects it and continues
+automatically if it is available. With several microphones, use the colored
+console to type numbers to check/uncheck microphones (for example
 1,2), or A for all available inputs. Press Enter to continue with checked [x]
 inputs. 0 cancels. Existing inputs start checked; your checks stay selected.
 Natural is the default voice sound; setup does not ask you to choose a profile.

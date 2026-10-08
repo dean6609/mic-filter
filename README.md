@@ -25,7 +25,7 @@
 ## Install in a minute
 
 1. **[Download MicFilter-Setup.exe](https://github.com/dean6609/mic-filter/releases/latest/download/MicFilter-Setup.exe)** and double-click it.
-2. Accept the Windows administrator prompt. Type microphone numbers to check/uncheck them (`1,2` selects two), or `A` for all available inputs. Press Enter to continue with the checked `[x]` inputs.
+2. Accept the Windows administrator prompt. With only one connected, enabled microphone, setup selects it and continues automatically if it is available. With several microphones, type their numbers to check/uncheck them (`1,2` selects two), or `A` for all available inputs. Press Enter to continue with the checked `[x]` inputs.
 3. Follow the short colored progress messages. Setup checks each microphone and adds **MicFilter**, with its microphone icon, to your desktop, Start menu and **Settings → Apps**. Voice sound starts at **Natural**; change it later from the tray menu.
 
 The first installation enables the filter and configures the icon to show when Windows starts. Open the desktop shortcut whenever you want to show its tray controls; reopening it keeps the current state. Setup works offline and uses the standard Windows installation location. Existing inputs are checked by default and keep their saved controls and voice sound. `0` cancels microphone selection. The console stays open at the end so you can read the result.

@@ -6,7 +6,7 @@
 
 The tested rates are 8, 16, 22.05, 44.1, 48, 96 and 192 kHz; tested channel counts are 1, 2, 4 and 8. These check the processing implementation, not every audio driver.
 
-`package.ps1 -RunTests` checks all nine embedded components, isolated extraction, Windows loading all seven compressed icon sizes, persistent console selection (multiple inputs, toggling, invalid answers, unavailable inputs, keep/continue/cancel), the compact native tray menu/current choices and PowerShell 5.1-compatible scripts. Scripted stdin exercises the real microphone prompts without a voice prompt. Registry tests use disposable HKCU fixtures and do not affect real devices.
+`package.ps1 -RunTests` checks all nine embedded components, isolated extraction, Windows loading all seven compressed icon sizes, automatic single-input selection without stdin, rejection of a sole conflicting input, persistent console selection (multiple inputs, toggling, invalid answers, unavailable inputs, keep/continue/cancel), the compact native tray menu/current choices and PowerShell 5.1-compatible scripts. Scripted stdin exercises the real microphone prompts without a voice prompt. Registry tests use disposable HKCU fixtures and do not affect real devices.
 
 The tray's real window procedure is tested against private controls: reopening preserves both on and off, while exit disables filtering. Startup registration/uninstall use a private registry fixture. APO tests also pin the reported 0.6 version to the installer registration.
 
