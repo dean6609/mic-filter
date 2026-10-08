@@ -14,6 +14,7 @@ $first='{00000000-0000-0000-0000-000000000001}'
 $second='{00000000-0000-0000-0000-000000000002}'
 $third='{00000000-0000-0000-0000-000000000003}'
 $utf8=[Text.UTF8Encoding]::new($true)
+$runtimeFiles=@()
 function Assert($Condition,[string]$Message){if(-not $Condition){throw $Message}}
 function Run-Fixture([string]$Action,[string]$Endpoint,[int]$Expected=0){
     $report=Join-Path $privateRoot ('report-'+[guid]::NewGuid().ToString('N')+'.txt')
@@ -33,7 +34,7 @@ function Run-Fixture([string]$Action,[string]$Endpoint,[int]$Expected=0){
 function Slot([string]$Endpoint){(Get-Item -LiteralPath ($registry+'\Capture\'+$Endpoint+'\FxProperties')).GetValue($effectSlot)}
 try{
     New-Item -ItemType Directory -Path $source,$program,$data,(Join-Path $privateRoot 'Links') -Force | Out-Null
-    foreach($name in @('MicFilter.exe','MicFilterAPO.dll','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){Copy-Item -LiteralPath (Join-Path $DistributionDirectory $name) -Destination $source}
+    foreach($name in @('MicFilter.exe','MicFilterAPO.dll','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt','GETTING_STARTED.txt')){Copy-Item -LiteralPath (Join-Path $DistributionDirectory $name) -Destination $source}
     # Run the production scripts against private HKCU keys and folders. The only replacements
     # are environment access, elevation, process enumeration and hardware/shortcut boundaries.
     # No production switch permits bypassing elevation or redirecting installed device keys.
@@ -51,7 +52,12 @@ function New-FixtureShell {
     $folders=New-Object PSObject
     $folders | Add-Member ScriptMethod Item {param($Name) return (Join-Path $env:ProgramFiles '..\Links')}
     $shell=New-Object PSObject -Property @{SpecialFolders=$folders}
-    $shell | Add-Member ScriptMethod CreateShortcut {param($Path) return (New-Object PSObject -Property @{TargetPath=''})}
+    $shell | Add-Member ScriptMethod CreateShortcut {
+        param($Path)
+        $shortcut=New-Object PSObject -Property @{TargetPath='';WorkingDirectory='';Description='';IconLocation=''}
+        $shortcut | Add-Member ScriptMethod Save {}
+        return $shortcut
+    }
     return $shell
 }
 '@
@@ -109,6 +115,8 @@ function New-FixtureShell {
     $batch=Get-Content -LiteralPath (Join-Path $testRoot 'setup-install.ps1') -Raw -Encoding UTF8
     $batch=$batch.Replace('HKLM:\SOFTWARE\Classes\',$registry+'\Classes\')
     $batch=$batch.Replace('SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\',$fixture+'\Capture\')
+    $batch=$batch.Replace('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',$registry+'\Run')
+    $batch=$batch.Replace('New-Object -ComObject WScript.Shell','New-FixtureShell')
     $batch=$batch.Replace('$env:ProgramFiles',("'"+$program.Replace("'","''")+"'"))
     $batch=$batch.Replace('$env:ProgramData',("'"+$data.Replace("'","''")+"'"))
     $batch=$batch.Replace("if(-not `$administrator -or -not [Environment]::Is64BitProcess){throw 'Administrator permission and Windows x64 are required.'}",'')
@@ -122,6 +130,8 @@ try {
     $start.Arguments='-NoProfile -ExecutionPolicy Bypass -File "'+$source+'\setup-install.ps1" -EndpointList "'+$first+','+$fourth+'" -VoicePreset 1 -SummaryPath "'+$summary+'"'
     $start.UseShellExecute=$false;$start.CreateNoWindow=$true;$start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
     $start.EnvironmentVariables.Remove('PSModulePath')
+    # Keep the same read/write handles as the tray/APO while setup runs in another process.
+    foreach($path in @($stateFile,$optionsFile)){$runtimeFiles+=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::ReadWrite)}
     $process=[Diagnostics.Process]::Start($start);$output=$process.StandardOutput.ReadToEndAsync();$errorOutput=$process.StandardError.ReadToEndAsync()
     if(-not $process.WaitForExit(15000)){$process.Kill();$process.WaitForExit();throw 'The isolated batch rollback timed out.'}
     Assert ($process.ExitCode -eq 1) 'Capture failure did not fail the batch.'
@@ -129,6 +139,23 @@ try {
     Assert ([IO.File]::ReadAllText($summary) -match 'could not capture audio') ('The batch did not reach capture verification: '+[IO.File]::ReadAllText($summary))
     Assert ((Slot $first) -eq $ownClsid -and (Slot $second) -eq $ownClsid -and -not(Slot $fourth)) ('Batch rollback did not restore each selected input: '+$output.Result+$errorOutput.Result)
     Assert ([IO.File]::ReadAllText($backup) -eq $saved) 'Batch rollback lost the original backup document.'
+    $runtimeFiles[0].Position=8;$enabled=New-Object byte[] 4;$null=$runtimeFiles[0].Read($enabled,0,4)
+    $runtimeFiles[1].Position=8;$voice=New-Object byte[] 4;$null=$runtimeFiles[1].Read($voice,0,4)
+    Assert ([BitConverter]::ToInt32($enabled,0) -eq 0 -and [BitConverter]::ToInt32($voice,0) -eq 3) 'Open runtime handles did not see restored settings.'
+    # A successful update must also work with both handles still open and keep saved settings.
+    $batch=$batch.Replace("Code=1;Text='Frames=0 Packets=0'","Code=0;Text='Frames=1024 Packets=4'")
+    Assert ($batch -notmatch 'HKLM:|CurrentVersion\\MMDevices') 'The batch fixture still refers to production registration keys.'
+    [IO.File]::WriteAllText((Join-Path $source 'setup-install.ps1'),$batch,$utf8)
+    $start.Arguments='-NoProfile -ExecutionPolicy Bypass -File "'+$source+'\setup-install.ps1" -EndpointList "'+$first+','+$second+'" -SummaryPath "'+$summary+'"'
+    $process=[Diagnostics.Process]::Start($start);$output=$process.StandardOutput.ReadToEndAsync();$errorOutput=$process.StandardError.ReadToEndAsync()
+    if(-not $process.WaitForExit(15000)){$process.Kill();$process.WaitForExit();throw 'The isolated shared-file update timed out.'}
+    Assert ($process.ExitCode -eq 0) ('Update with runtime handles open failed: '+$output.Result+$errorOutput.Result)
+    $process.Dispose()
+    $runtimeFiles[0].Position=8;$null=$runtimeFiles[0].Read($enabled,0,4)
+    $runtimeFiles[1].Position=8;$null=$runtimeFiles[1].Read($voice,0,4)
+    Assert ([BitConverter]::ToInt32($enabled,0) -eq 0 -and [BitConverter]::ToInt32($voice,0) -eq 3) 'Shared-file update lost disabled/Deep settings.'
+    Assert ((Slot $first) -eq $ownClsid -and (Slot $second) -eq $ownClsid -and [IO.File]::ReadAllText($backup) -eq $saved) 'Shared-file update changed inputs or original backups.'
+    foreach($stream in $runtimeFiles){$stream.Dispose()};$runtimeFiles=@()
     Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes($stateFile),8) -eq 0 -and [BitConverter]::ToInt32([IO.File]::ReadAllBytes($optionsFile),8) -eq 3) 'Batch rollback lost disabled/profile settings.'
     Run-Fixture Remove $first
     Assert (-not(Slot $first) -and (Slot $second) -eq $ownClsid -and (Test-Path -LiteralPath $class)) 'Removing one input broke the other.'
@@ -147,8 +174,9 @@ try {
     foreach($endpoint in @($first,$second,$third)){Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$endpoint+'\FxProperties')).GetValue('unrelated') -eq 'kept') 'An unrelated property was changed.'}
     Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$first+'\FxProperties')).GetValue($discoverySlot) -eq $discoveryProxy) 'Uninstall removed the discovery proxy.'
     Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$second+'\FxProperties')).GetValue($associationSlot) -eq 'test-driver-association') 'Uninstall removed the driver association.'
-    Write-Host 'PASS multiple inputs: legacy migration, idempotent install, shared controls, conflict preservation, capture-failure batch rollback, individual removal, all-input uninstall; isolated HKCU and files.'
+    Write-Host 'PASS multiple inputs: legacy migration, idempotent install, shared-file update/rollback, saved controls, conflict preservation, capture-failure batch rollback, individual removal, all-input uninstall; isolated HKCU and files.'
 }finally{
+    foreach($stream in $runtimeFiles){$stream.Dispose()}
     if(Test-Path -LiteralPath $registry){Remove-Item -LiteralPath $registry -Recurse -Force}
     $resolved=[IO.Path]::GetFullPath($privateRoot)
     $tempRoot=[IO.Path]::GetFullPath([IO.Path]::GetTempPath())

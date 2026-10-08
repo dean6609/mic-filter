@@ -60,7 +60,8 @@ try {
     if(Test-Path -LiteralPath $classPath){$oldDll=(Get-Item -LiteralPath $classPath).GetValue('')}
     $optionsPath=Join-Path $dataDir 'options.bin'
     if(Test-Path -LiteralPath $machineRunKeyPath){$oldStartup=(Get-Item -LiteralPath $machineRunKeyPath).GetValue('MicFilter')}
-    $oldOptions=if(Test-Path -LiteralPath $optionsPath){[IO.File]::ReadAllBytes($optionsPath)}else{$null}
+    # Both 64-byte settings files can be held open for writing by the tray and audio host.
+    $oldOptions=if(Test-Path -LiteralPath $optionsPath){Read-State $optionsPath}else{$null}
     foreach($name in @('MicFilter.exe','install.ps1','installer-registry.ps1')){if(Test-Path -LiteralPath (Join-Path $programDir $name)){Copy-Item -LiteralPath (Join-Path $programDir $name) -Destination (Join-Path $source ('previous-'+$name))}}
     if(Get-Process -Name MicFilter,WavoFilter -ErrorAction SilentlyContinue){
         $quit=Run-Native -Executable (Join-Path $source 'MicFilter.exe') -Arguments '--quit' -Name 'close-tray'

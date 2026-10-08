@@ -2,6 +2,7 @@
 
 ## 0.6.0 — 2026-10-08
 
+- Fix updates failing to read saved voice options while the tray or audio host holds the settings file open. Setup shares read/write access and preserves saved settings through update and rollback.
 - Restore automatic selection and installation when only one connected, enabled microphone is found. Compatibility checks still apply; multiple microphones keep the console checklist.
 - Simple colored console setup with persistent microphone checks, number-based multiple selection and plain progress/results. Fresh installs default to Natural without a voice prompt; updates keep the saved profile. Setup explains single-click on/off and later voice changes from the tray.
 - Independent restore backups for multiple inputs, including migration of the previous single-input backup. Removal keeps other microphones registered; uninstall restores disconnected inputs too. Batch setup checks every selected input and restores the batch if capture fails.
