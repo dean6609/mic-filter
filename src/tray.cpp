@@ -287,9 +287,7 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
         case idGentle:if(p)InterlockedExchange(&p->thresholdPermille,600);break;case idNoGate:if(p)InterlockedExchange(&p->thresholdPermille,0);break;
         case idWetFull:if(p)InterlockedExchange(&p->wetPermille,1000);break;case idWetPartial:if(p)InterlockedExchange(&p->wetPermille,850);break;
         case idVoice+0:case idVoice+1:case idVoice+2:case idVoice+3:if(auto* o=options.get())InterlockedExchange(&o->voicePreset,static_cast<LONG>(LOWORD(wp)-idVoice));break;
-        case idAddMicrophones:{const auto setup=executableDirectory()+L"\\MicFilter-Setup.exe";
-            if(GetFileAttributesW(setup.c_str())!=INVALID_FILE_ATTRIBUTES)ShellExecuteW(hwnd,L"open",setup.c_str(),nullptr,nullptr,SW_SHOWNORMAL);
-            else MessageBoxW(hwnd,L"Run MicFilter-Setup.exe and check one or more microphones.\n\nAlready installed inputs can be updated safely. Other installed microphones and your saved controls are kept.",L"Add microphones",MB_OK|MB_ICONINFORMATION);break;}
+        case idAddMicrophones:MessageBoxW(hwnd,L"Run your downloaded MicFilter-Setup.exe again.\n\nType microphone numbers to check or uncheck them, then press Enter to continue. Already installed inputs update safely; your saved controls and other microphones are kept.",L"Add microphones",MB_OK|MB_ICONINFORMATION);break;
         case idExit:DestroyWindow(hwnd);break;}update();return 0;}
     case WM_CLOSE:if(installerProcess)return 0;DestroyWindow(hwnd);return 0;
     case WM_DESTROY:if(auto* p=mapping.get())InterlockedExchange(&p->enabled,0);Shell_NotifyIconW(NIM_DELETE,&tray);PostQuitMessage(0);return 0;

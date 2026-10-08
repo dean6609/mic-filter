@@ -5,6 +5,7 @@ The geometry matches the project's microphone mark. Checked-in output makes buil
 from pathlib import Path
 import math
 import struct
+import zlib
 
 
 def capsule(x, y, ax, ay, bx, by, radius):
@@ -26,21 +27,20 @@ def pixel(x, y):
 
 def frame(size):
     bits = bytearray()
-    for row in reversed(range(size)):
+    for row in range(size):
+        bits.append(0)  # PNG scanline filter: none.
         for col in range(size):
             samples = [pixel((col + (sx + .5) / 4) / size, (row + (sy + .5) / 4) / size)
                        for sx in range(4) for sy in range(4)]
             alpha = sum(p[3] for p in samples)
             rgb = [round(sum(p[c] * p[3] for p in samples) / alpha) if alpha else 0 for c in range(3)]
-            bits.extend((*reversed(rgb), round(alpha / 16)))
-    mask_stride = ((size + 31) // 32) * 4
-    mask = bytearray(mask_stride * size)
-    for row in range(size):
-        for col in range(size):
-            if bits[(row * size + col) * 4 + 3] == 0:
-                mask[row * mask_stride + col // 8] |= 0x80 >> (col % 8)
-    header = struct.pack('<IiiHHIIiiII', 40, size, size * 2, 1, 32, 0, len(bits), 0, 0, 0, 0)
-    return header + bits + mask
+            bits.extend((*rgb, round(alpha / 16)))
+    # Windows 10+ reads PNG-compressed icon resources natively. Keep every pixel/size,
+    # without a runtime decoder dependency or hundreds of KB of uncompressed bitmaps.
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    header = struct.pack('>IIBBBBB', size, size, 8, 6, 0, 0, 0)
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header) + chunk(b'IDAT', zlib.compress(bits, 9)) + chunk(b'IEND', b'')
 
 
 sizes = (16, 24, 32, 48, 64, 128, 256)

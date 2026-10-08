@@ -109,8 +109,6 @@ try {
         $shortcut=$shell.CreateShortcut($shortcutPath);$shortcut.TargetPath=Join-Path $programDir 'MicFilter.exe';$shortcut.WorkingDirectory=$programDir;$shortcut.Description='Enable or disable microphone noise suppression';$shortcut.IconLocation=(Join-Path $programDir 'MicFilter.exe')+',0';$shortcut.Save()
     }
     Copy-Item -LiteralPath (Join-Path $source 'GETTING_STARTED.txt') -Destination (Join-Path $programDir 'GETTING_STARTED.txt') -Force
-    $setupSource=Join-Path $source 'MicFilter-Setup.exe';$setupDestination=Join-Path $programDir 'MicFilter-Setup.exe'
-    if(Test-Path -LiteralPath $setupSource){if(-not(Test-Path -LiteralPath $setupDestination) -or (Get-Sha256 $setupSource) -ne (Get-Sha256 $setupDestination)){Copy-Item -LiteralPath $setupSource -Destination $setupDestination -Force}}
     # Settings > Apps lists MicFilter and runs its uninstaller from here.
     New-Item -Path $uninstallKeyPath -Force | Out-Null
     $exe=Join-Path $programDir 'MicFilter.exe'

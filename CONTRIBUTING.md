@@ -16,7 +16,7 @@ Use `-OutputDirectory dist-dev` with `build.ps1`, followed by `package.ps1 -Dist
 
 | File | Responsibility |
 | --- | --- |
-| `src/setup.cpp`, `src/setup_ui.h` | Single-file bootstrap, native setup wizard, microphone checklist, elevation, protected extraction. |
+| `src/setup.cpp`, `src/setup_selection.h` | Single-file bootstrap, colored console checklist, multiple-input selection, elevation, protected extraction. |
 | `setup-install.ps1` | Batch installation transaction, per-input capture probes, shortcuts, Settings > Apps entry, rollback, cleanup of older files. |
 | `install.ps1` | `Install`/`Remove` for one microphone (registry association, backup, COM/APO registration, control file) and full `Uninstall`. |
 | `installer-registry.ps1` | Shared version and IDs, minimum registry rights, exact effect-value updates, device restart, delete-or-schedule-at-restart. |

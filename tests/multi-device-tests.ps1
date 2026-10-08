@@ -70,6 +70,11 @@ function New-FixtureShell {
         New-Item -Path ($registry+'\Capture\'+$endpoint+'\FxProperties') -Force | Out-Null
         New-ItemProperty -LiteralPath ($registry+'\Capture\'+$endpoint+'\FxProperties') -Name 'unrelated' -Value 'kept' -Force | Out-Null
     }
+    $discoverySlot='{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},7'
+    $discoveryProxy='{889C03C8-ABAD-4004-BF0A-BC7BB825E166}'
+    $associationSlot='{9e6136e0-57ab-4949-b57a-3627be142855},100'
+    New-ItemProperty -LiteralPath ($registry+'\Capture\'+$first+'\FxProperties') -Name $discoverySlot -Value $discoveryProxy -Force | Out-Null
+    New-ItemProperty -LiteralPath ($registry+'\Capture\'+$second+'\FxProperties') -Name $associationSlot -Value 'test-driver-association' -Force | Out-Null
     Run-Fixture Install $first
     # A 0.5 backup must migrate without making MicFilter its own original effect.
     $legacy=@(Read-InstallationBackups $backup)[0]
@@ -77,6 +82,8 @@ function New-FixtureShell {
     Run-Fixture Install $second
     Assert (@(Read-InstallationBackups $backup).Count -eq 2) 'Adding an input lost the old backup.'
     Assert ((Slot $first) -eq $ownClsid -and (Slot $second) -eq $ownClsid) 'Both inputs were not attached.'
+    Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$first+'\FxProperties')).GetValue($discoverySlot) -eq $discoveryProxy) 'The discovery proxy was replaced.'
+    Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$second+'\FxProperties')).GetValue($associationSlot) -eq 'test-driver-association') 'The driver association was changed.'
     $saved=[IO.File]::ReadAllText($backup)
     Run-Fixture Install $first
     Assert ([IO.File]::ReadAllText($backup) -eq $saved) 'Reinstall changed the original restore backups.'
@@ -87,6 +94,10 @@ function New-FixtureShell {
     Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes($stateFile),8) -eq 0) 'Adding/updating an input enabled a disabled filter.'
     Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes($optionsFile),8) -eq 3) 'The saved Deep profile was lost.'
     $other='{00000000-0000-0000-0000-000000000099}'
+    New-ItemProperty -LiteralPath ($registry+'\Capture\'+$third+'\FxProperties') -Name $discoverySlot -Value $other -Force | Out-Null
+    Run-Fixture Install $third 1
+    Assert (-not(Slot $third) -and [IO.File]::ReadAllText($backup) -eq $saved) 'A real processing-effect conflict was ignored.'
+    Remove-ItemProperty -LiteralPath ($registry+'\Capture\'+$third+'\FxProperties') -Name $discoverySlot
     New-ItemProperty -LiteralPath ($registry+'\Capture\'+$third+'\FxProperties') -Name $effectSlot -Value $other -Force | Out-Null
     Run-Fixture Install $third 1
     Assert ((Slot $third) -eq $other -and [IO.File]::ReadAllText($backup) -eq $saved) 'A real conflict changed an effect or backup.'
@@ -128,6 +139,8 @@ try {
     Assert (-not(Slot $first) -and -not(Slot $second) -and (Slot $third) -eq $other) 'Uninstall did not restore all inputs or changed an unrelated app.'
     Assert (-not(Test-Path -LiteralPath $class) -and -not(Test-Path -LiteralPath (Join-Path $program 'MicFilter'))) 'Uninstall left application registration/files.'
     foreach($endpoint in @($first,$second,$third)){Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$endpoint+'\FxProperties')).GetValue('unrelated') -eq 'kept') 'An unrelated property was changed.'}
+    Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$first+'\FxProperties')).GetValue($discoverySlot) -eq $discoveryProxy) 'Uninstall removed the discovery proxy.'
+    Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$second+'\FxProperties')).GetValue($associationSlot) -eq 'test-driver-association') 'Uninstall removed the driver association.'
     Write-Host 'PASS multiple inputs: legacy migration, idempotent install, shared controls, conflict preservation, capture-failure batch rollback, individual removal, all-input uninstall; isolated HKCU and files.'
 }finally{
     if(Test-Path -LiteralPath $registry){Remove-Item -LiteralPath $registry -Recurse -Force}

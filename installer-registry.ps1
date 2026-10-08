@@ -42,9 +42,11 @@ function Assert-CompatibleEffectChain($Key) {
     if($value -and $ours -notcontains $value){throw "Another audio app manages this microphone. Choose a different input, or remove that app's effect from this input and try again."}
     foreach($slot in @(1,5,6,7)){
         $value=$Key.GetValue('{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},'+$slot)
-        if($value){throw 'This microphone uses manufacturer audio enhancements. Choose another input; its existing effects have been kept.'}
+        $discoveryOnly=$slot -eq 7 -and $value -eq '{889C03C8-ABAD-4004-BF0A-BC7BB825E166}'
+        if($value -and -not $discoveryOnly){throw 'This microphone uses manufacturer audio enhancements. Choose another input; its existing effects have been kept.'}
     }
-    if($Key.GetValue('{9e6136e0-57ab-4949-b57a-3627be142855},100')){throw 'This microphone uses a driver-managed effects chain. Choose another input; its existing effects have been kept.'}
+    # Keep driver associations and Microsoft's discovery-only proxy untouched. Neither proves
+    # that our legacy effect slot conflicts; setup checks capture and per-input APO activity.
 }
 
 # Registry value updates intentionally request QueryValues + SetValue only.

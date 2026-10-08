@@ -2,12 +2,12 @@
 
 ## 0.6.0 — 2026-10-08
 
-- Native graphical setup with a microphone checklist, optional voice sound selection, progress and a plain-language completion screen. Update existing inputs or add more without uninstalling first.
+- Simple colored console setup with persistent microphone checks, number-based multiple selection, optional voice sound and plain progress/results. Update existing inputs or add more without uninstalling first; no graphical wizard or added UI runtime.
 - Independent restore backups for multiple inputs, including migration of the previous single-input backup. Removal keeps other microphones registered; uninstall restores disconnected inputs too. Batch setup checks every selected input and restores the batch if capture fails.
-- Embedded microphone icon in the application and installer, with explicit icon references for Settings > Apps and shortcuts.
+- Embedded microphone icon in the application and installer, with explicit icon references for Settings > Apps and shortcuts. Lossless PNG compression keeps all seven sizes without bloating the executables.
 - Gentler Clear and Broadcast profiles: less treble emphasis, moderate Broadcast compression with a soft knee and lower makeup gain. New Deep profile retains low fundamentals, reduces low-mid mud and adds restrained consonant presence without changing pitch.
 - Per-microphone activity counters and tray input selection prevent activity on one input from confirming another. Shared voice and enable/disable controls retain the 64-byte ABI.
-- Other audio applications, manufacturer effects and driver-managed chains remain untouched and appear unavailable in setup. Physical compatibility and subjective voice quality still require capture/listening checks.
+- Other audio applications and manufacturer processing effects remain untouched and appear unavailable in setup. Windows' discovery-only proxy and driver association metadata no longer cause false conflicts; capture and per-input processing are still checked. Physical compatibility and subjective voice quality require capture/listening checks.
 
 ## 0.5.3 — 2026-10-01
 

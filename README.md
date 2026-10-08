@@ -17,7 +17,7 @@
 | | |
 | --- | --- |
 | **Native filtering** | RNNoise runs in the Windows microphone effects pipeline. |
-| **One or several microphones** | Check any connected, enabled inputs in setup. Add more later without removing the existing installation. |
+| **One or several microphones** | Choose connected, enabled inputs in a simple console checklist. Add more later without removing the existing installation. |
 | **One `.exe`** | The model and all runtime components are included. Installation works offline. |
 | **Persistent settings** | The filter keeps its enabled or disabled state after reboot. |
 | **Lightweight controls** | A tray icon controls the filter; it does not need to stay open for processing. |
@@ -25,12 +25,14 @@
 ## Install in a minute
 
 1. **[Download MicFilter-Setup.exe](https://github.com/dean6609/mic-filter/releases/latest/download/MicFilter-Setup.exe)** and double-click it.
-2. Check one or more microphones. Optionally choose a voice sound, then click **Install selected** and accept the Windows administrator prompt.
-3. Follow the setup window. The installer checks audio on each microphone and adds **MicFilter**, with its microphone icon, to your desktop, Start menu and **Settings → Apps**.
+2. Accept the Windows administrator prompt. Type microphone numbers to check/uncheck them (`1,2` selects two), or `A` for all available inputs. Press Enter to continue with the checked `[x]` inputs.
+3. Optionally choose a voice sound, then follow the short colored progress messages. Setup checks each microphone and adds **MicFilter**, with its microphone icon, to your desktop, Start menu and **Settings → Apps**.
 
-The first installation enables the filter. Open the desktop shortcut whenever you want to show its tray controls. Setup works offline and uses the standard Windows installation location. Existing installations keep their saved controls; **Voice sound: keep my current choice** preserves your profile during upgrades.
+The first installation enables the filter. Open the desktop shortcut whenever you want to show its tray controls. Setup works offline and uses the standard Windows installation location. Existing inputs are checked by default and keep their saved controls; press Enter at the voice prompt to preserve your profile. `0` cancels microphone selection. The console stays open at the end so you can read the result.
 
 An input managed by another audio app or a manufacturer effects chain is shown as unavailable. Choose another input, or remove the other app's effect from that input and run setup again. MicFilter updates its own existing effect safely and preserves other applications' effects.
+
+Windows' discovery-only effects proxy and driver association metadata are kept; their presence alone no longer blocks setup. Capture and per-input processing checks still determine whether the filter is confirmed.
 
 ## Your filter, your controls
 
@@ -54,7 +56,7 @@ Right-click for options:
 
 The voice profile, noise controls and enable/disable setting apply to **all installed microphones**, including when two inputs are used at the same time. Each input has its own processing state and restore backup. **Deep** shapes the existing voice; it does not lower pitch.
 
-Choose **Add or update microphones** in the tray to open setup again. Unchecked inputs already installed are kept. **Microphone activity and removal** selects the input used by diagnostics and **Remove effect and restore configuration**; removing one keeps the others installed. **Filter confirmed** refers only to that selected input. Uninstall restores all inputs, including disconnected ones.
+Run your downloaded installer again to add or update microphones; **Add or update microphones** in the tray reminds you of the steps. Unchecked inputs already installed are kept. **Microphone activity and removal** selects the input used by diagnostics and **Remove effect and restore configuration**; removing one keeps the others installed. **Filter confirmed** refers only to that selected input. Uninstall restores all inputs, including disconnected ones.
 
 ## Uninstall
 

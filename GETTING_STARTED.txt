@@ -1,11 +1,16 @@
 MicFilter 0.6.0 — Native microphone noise suppression for Windows
 
 INSTALL
-Double-click MicFilter-Setup.exe. Check one or more connected, enabled inputs.
-Choose a voice sound if you like, click Install selected and accept the Windows
-administrator prompt. Setup shows progress, checks each microphone without
-saving your voice, and creates MicFilter on the desktop and in the Start menu.
+Double-click MicFilter-Setup.exe and accept the Windows administrator prompt.
+In the colored console, type numbers to check/uncheck microphones (for example
+1,2), or A for all available inputs. Press Enter to continue with checked [x]
+inputs. 0 cancels. Existing inputs start checked; your checks stay selected.
+Choose a voice sound if you like, or press Enter to keep your current choice.
+Setup checks each microphone without saving your voice, then creates MicFilter
+on the desktop and in the Start menu. Press Enter at the end to close.
 Inputs with other audio effects are marked unavailable; their effects are kept.
+Windows discovery-only proxies and driver metadata are kept and do not block
+installation by themselves. Setup still verifies capture and filter activity.
 All components and the model are included; installation works offline.
 
 CONTROL

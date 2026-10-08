@@ -15,7 +15,7 @@ $resource=Join-Path $packageBuild 'setup.o'
 & (Join-Path $compiler.FullName 'bin\windres.exe') '-i' $rc '-o' $resource '-O' 'coff'
 if($LASTEXITCODE -ne 0){throw 'Could not package resources.'}
 $setup=Join-Path $distribution 'MicFilter-Setup.exe'
-& (Join-Path $compiler.FullName 'bin\clang++.exe') '-std=c++20' '-O2' '-Wall' '-Wextra' '-static' '-municode' '-mwindows' '-DUNICODE' '-D_UNICODE' '-D_WIN32_WINNT=0x0A00' '-fms-extensions' (Join-Path $root 'src\setup.cpp') $resource '-lole32' '-luuid' '-lshell32' '-lpropsys' '-ladvapi32' '-luser32' '-lgdi32' '-lcomctl32' '-luxtheme' '-o' $setup
+& (Join-Path $compiler.FullName 'bin\clang++.exe') '-std=c++20' '-O2' '-Wall' '-Wextra' '-static' '-municode' '-DUNICODE' '-D_UNICODE' '-D_WIN32_WINNT=0x0A00' '-fms-extensions' (Join-Path $root 'src\setup.cpp') $resource '-lole32' '-luuid' '-lshell32' '-lpropsys' '-ladvapi32' '-luser32' '-o' $setup
 if($LASTEXITCODE -ne 0){throw 'Could not compile the installer.'}
 Write-Host ('Installer ready: '+$setup+' ('+[math]::Round((Get-Item -LiteralPath $setup).Length/1MB,2)+' MB)')
 if($RunTests){& (Join-Path $root 'tests\package-tests.ps1') -DistributionDirectory $distribution}
