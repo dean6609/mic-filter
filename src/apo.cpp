@@ -1,8 +1,10 @@
+#include <initguid.h>
 #include "rate_processor.h"
 #include "apo_sdk.h"
 #include <cstring>
 #include <new>
 #include "apo_trace.h"
+#include <functiondiscoverykeys_devpkey.h>
 
 namespace {
 volatile LONG objects=0;
@@ -15,7 +17,7 @@ bool format(IAudioMediaType* media,UNCOMPRESSEDAUDIOFORMAT& out) {
         out.fFramesPerSecond>=8000.0f && out.fFramesPerSecond<=192000.0f;
 }
 class Apo final:public IAudioProcessingObject,public IAudioProcessingObjectRT,
-                public IAudioProcessingObjectConfiguration,public IAudioSystemEffects {
+                public IAudioProcessingObjectConfiguration,public IAudioSystemEffects2 {
     class InnerUnknown final:public IUnknown {
         Apo& owner_;
     public:
@@ -30,16 +32,32 @@ class Apo final:public IAudioProcessingObject,public IAudioProcessingObjectRT,
     UINT32 channels_=0,maxFrames_=0;
     float rate_=0;
     micfilter::StateMapping mapping_;
+    micfilter::StateMapping endpointTelemetry_;
     micfilter::OptionsMapping options_;
     micfilter::RateProcessor processor_;
     micfilter::Trace trace_;
+    SRWLOCK effectsLock_=SRWLOCK_INIT;
+    HANDLE effectsEvent_=nullptr,effectsTimer_=nullptr;
+    bool reportedEnabled_=false;
+    static void CALLBACK effectsChanged(void* context,BOOLEAN){
+        auto& self=*static_cast<Apo*>(context);
+        AcquireSRWLockExclusive(&self.effectsLock_);
+        const bool enabled=micfilter::snapshot(self.mapping_.get()).enabled;
+        if(enabled!=self.reportedEnabled_){self.reportedEnabled_=enabled;if(self.effectsEvent_)SetEvent(self.effectsEvent_);}
+        ReleaseSRWLockExclusive(&self.effectsLock_);
+    }
     HRESULT report(const wchar_t* step,HRESULT result){
         std::wostringstream log;log<<step<<L" HRESULT=0x"<<std::hex<<static_cast<unsigned long>(result);trace_.write(log.str());
         return result;
     }
 public:
     explicit Apo(IUnknown* outer=nullptr):outer_(outer){InterlockedIncrement(&objects);trace_.write(L"APO constructed aggregated="+std::to_wstring(outer!=nullptr));}
-    ~Apo(){InterlockedDecrement(&objects);}
+    ~Apo(){
+        // Stop notifications before unmapping controls; no timer/lock work runs in APOProcess.
+        if(effectsTimer_)DeleteTimerQueueTimer(nullptr,effectsTimer_,INVALID_HANDLE_VALUE);
+        if(effectsEvent_)CloseHandle(effectsEvent_);
+        InterlockedDecrement(&objects);
+    }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid,void** out) override {
         return outer_?outer_->QueryInterface(iid,out):nonDelegatingQueryInterface(iid,out);
     }
@@ -52,6 +70,7 @@ public:
         else if(iid==__uuidof(IAudioProcessingObjectRT)) *out=static_cast<IAudioProcessingObjectRT*>(this);
         else if(iid==__uuidof(IAudioProcessingObjectConfiguration)) *out=static_cast<IAudioProcessingObjectConfiguration*>(this);
         else if(iid==__uuidof(IAudioSystemEffects)) *out=static_cast<IAudioSystemEffects*>(this);
+        else if(iid==__uuidof(IAudioSystemEffects2)) *out=static_cast<IAudioSystemEffects2*>(this);
         else return E_NOINTERFACE;
         AddRef();return S_OK;
     }
@@ -65,11 +84,42 @@ public:
         initialized_=true;
         const bool mapped=mapping_.open(); // All file operations happen before real-time processing.
         options_.open(); // Optional: without it the Natural voice preset applies.
+        // Endpoint telemetry prevents another input's activity from confirming this microphone.
+        // Unknown initialization layouts keep global controls but cannot confirm an endpoint.
+        if(data&&(bytes==sizeof(APOInitSystemEffects)||bytes==sizeof(APOInitSystemEffects2))){
+            APOInitSystemEffects context{};std::memcpy(&context,data,sizeof(context));
+            if(context.APOInit.cbSize==bytes&&context.APOInit.clsid==micfilter::kClsid&&context.pAPOEndpointProperties){
+                PROPVARIANT value;PropVariantInit(&value);
+                if(SUCCEEDED(context.pAPOEndpointProperties->GetValue(PKEY_AudioEndpoint_GUID,&value))&&value.vt==VT_LPWSTR&&value.pwszVal)
+                    endpointTelemetry_.openEndpoint(value.pwszVal);
+                PropVariantClear(&value);
+            }
+        }
         const auto mappingError=mapped?0:GetLastError();
         trace_.write(L"Initialize bytes="+std::to_wstring(bytes)+L" controls="+std::to_wstring(mapped)+L" mappingError="+std::to_wstring(mappingError));
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE Reset() override {processor_.reset();return S_OK;}
+    HRESULT STDMETHODCALLTYPE GetEffectsList(GUID** effects,UINT* count,HANDLE changed) override {
+        if(!effects||!count)return E_POINTER;
+        *effects=nullptr;*count=0;
+        if(!initialized_)return APOERR_NOT_INITIALIZED;
+        HANDLE duplicate=nullptr;
+        if(changed&&!DuplicateHandle(GetCurrentProcess(),changed,GetCurrentProcess(),&duplicate,EVENT_MODIFY_STATE,FALSE,0))return HRESULT_FROM_WIN32(GetLastError());
+        AcquireSRWLockExclusive(&effectsLock_);
+        if(effectsEvent_)CloseHandle(effectsEvent_);effectsEvent_=duplicate;
+        reportedEnabled_=micfilter::snapshot(mapping_.get()).enabled;
+        HRESULT result=S_OK;
+        if(duplicate&&!effectsTimer_&&!CreateTimerQueueTimer(&effectsTimer_,nullptr,effectsChanged,this,250,250,WT_EXECUTEDEFAULT)){
+            result=HRESULT_FROM_WIN32(GetLastError());CloseHandle(effectsEvent_);effectsEvent_=nullptr;
+        }
+        if(SUCCEEDED(result)&&reportedEnabled_){
+            *effects=static_cast<GUID*>(CoTaskMemAlloc(sizeof(GUID)));
+            if(*effects){**effects=kNoiseSuppressionEffect;*count=1;}else result=E_OUTOFMEMORY;
+        }
+        ReleaseSRWLockExclusive(&effectsLock_);
+        return result;
+    }
     HRESULT STDMETHODCALLTYPE GetLatency(HNSTIME* time) override {
         if(!time)return E_POINTER;
         // 10 ms buffering plus RNNoise's 20 ms (overlap/add and delayed_X). Bypass has zero delay.
@@ -89,7 +139,7 @@ public:
         p->clsid=micfilter::kClsid;p->Flags=static_cast<APO_FLAG>(APO_FLAG_DEFAULT|APO_FLAG_INPLACE);
         wcscpy_s(p->szFriendlyName,L"MicFilter - RNNoise v1.21");
         wcscpy_s(p->szCopyrightInfo,L"GPL-3.0; RNNoise: Xiph.Org BSD-3-Clause");
-        p->u32MajorVersion=0;p->u32MinorVersion=5;
+        p->u32MajorVersion=0;p->u32MinorVersion=6;
         p->u32MinInputConnections=p->u32MaxInputConnections=1;
         p->u32MinOutputConnections=p->u32MaxOutputConnections=1;
         p->u32MaxInstances=UINT32_MAX;p->u32NumAPOInterfaces=interfaceCount;
@@ -119,7 +169,7 @@ public:
         channels_=a.dwSamplesPerFrame;rate_=a.fFramesPerSecond;maxFrames_=in[0]->u32MaxFrameCount;
         supported_=processor_.initialize(channels_,static_cast<unsigned>(rate_));
         if(!supported_)return E_OUTOFMEMORY;
-        if(auto* state=mapping_.get()) {
+        for(auto* state:{mapping_.get(),endpointTelemetry_.get()})if(state) {
             InterlockedExchange(&state->channels,channels_);InterlockedExchange(&state->sampleRate,static_cast<LONG>(rate_));
             InterlockedExchange(&state->formatSupported,supported_?1:0);
         }
@@ -145,9 +195,11 @@ public:
         else if(src!=dst)std::memcpy(dst,src,static_cast<size_t>(frames)*channels_*4);
         out[0]->u32ValidFrameCount=frames;
         out[0]->u32BufferFlags=(silent&&(!supported_||!settings.enabled))?BUFFER_SILENT:BUFFER_VALID;
-        if(state){InterlockedExchange(&state->producerPid,static_cast<LONG>(GetCurrentProcessId()));InterlockedIncrement64(&state->callbacks);InterlockedExchange64(&state->lastTick,GetTickCount64());
-            if(supported_&&settings.enabled&&processor_.healthy())InterlockedAdd64(&state->processedFrames,frames);
-            if(!processor_.healthy())InterlockedExchange(&state->formatSupported,0);}
+        for(auto* telemetry:{state,endpointTelemetry_.get()})if(telemetry){
+            InterlockedExchange(&telemetry->producerPid,static_cast<LONG>(GetCurrentProcessId()));InterlockedIncrement64(&telemetry->callbacks);InterlockedExchange64(&telemetry->lastTick,GetTickCount64());
+            if(supported_&&settings.enabled&&processor_.healthy())InterlockedAdd64(&telemetry->processedFrames,frames);
+            if(!processor_.healthy())InterlockedExchange(&telemetry->formatSupported,0);
+        }
     }
     UINT32 STDMETHODCALLTYPE CalcInputFrames(UINT32 frames) override{return frames;}
     UINT32 STDMETHODCALLTYPE CalcOutputFrames(UINT32 frames) override{return frames;}

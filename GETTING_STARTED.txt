@@ -1,24 +1,34 @@
-MicFilter 0.5.3 — Native microphone noise suppression for Windows
+MicFilter 0.6.0 — Native microphone noise suppression for Windows
 
 INSTALL
 Double-click MicFilter-Setup.exe and accept the Windows administrator prompt.
-Only connected, enabled microphones appear. If there is one, setup selects it
-automatically; if there are several, choose a number. Setup shows progress,
-checks capture without saving your voice, and creates MicFilter on the desktop
-and in the Start menu.
+With only one connected, enabled microphone, setup selects it and continues
+automatically if it is available. With several microphones, use the colored
+console to type numbers to check/uncheck microphones (for example
+1,2), or A for all available inputs. Press Enter to continue with checked [x]
+inputs. 0 cancels. Existing inputs start checked; your checks stay selected.
+Natural is the default voice sound; setup does not ask you to choose a profile.
+Updates keep your saved voice sound. Right-click the icon to change it later.
+Setup checks each microphone without saving your voice, then creates MicFilter
+on the desktop and in the Start menu. Press Enter at the end to close.
+Inputs with other audio effects are marked unavailable; their effects are kept.
+Windows discovery-only proxies and driver metadata are kept and do not block
+installation by themselves. Setup still verifies capture and filter activity.
 All components and the model are included; installation works offline.
 
 CONTROL
 The first installation enables the filter. Windows applies the saved setting
 when an app uses the selected microphone, even when the tray app is closed.
 Opening MicFilter shows the tray icon without changing the setting.
+The icon shows automatically when Windows starts and keeps your saved setting.
 Click the icon to enable/disable. Right-click for these options:
-  Voice sound: Natural (as captured), Clear (brighter, less boomy) or
-    Broadcast (polished, more even volume).
+  Voice sound: Natural (as captured), Clear (gentle clarity), Broadcast
+    (warm speech, even volume), or Deep (body and clarity for lower voices).
+    Deep preserves your voice's pitch; it does not make your pitch lower.
   Silence between words: Off is recommended; Balanced and Strict also
     silence pauses but can clip very soft words.
   Original microphone sound: 15% sounds more natural but lets some noise back.
-Exit and disable filter closes the tray app AND turns filtering off.
+Exit and turn off noise reduction closes the tray app AND turns filtering off.
 The filter works with the tray app closed; you only need it to change options.
 Restarting Windows preserves the last enabled/disabled setting.
 
@@ -29,20 +39,23 @@ Other manufacturer effects may conflict; setup preserves them and reports it.
 RAW or exclusive-mode applications can bypass system effects.
 This is a noise-suppression filter, not a host for additional VST plugins.
 
-If setup asks for reconnection or a reboot, do that, open a capture app and
-check for Filter confirmed in diagnostics. Listen to consonants, quiet word
-endings and dictation quality as well as the noise reduction.
+Choose an input in Microphone activity for a brief check. It explains whether
+noise reduction is working, switched off, or was not detected on that
+input. No recordings are saved. Listen to consonants and quiet word endings
+as well as the noise reduction; an installed effect is not proof of filtering.
 
 UNINSTALL
-Settings > Apps > Installed apps > MicFilter > Uninstall, or right-click the
-icon and choose Uninstall MicFilter. Microphones return to their previous
+Settings > Apps > Installed apps > MicFilter > Uninstall. Microphones return
+to their previous
 configuration and all MicFilter files, shortcuts and settings are deleted.
 If Windows audio still holds a file, it is deleted at the next restart.
 If the program folder is damaged, run: MicFilter-Setup.exe --uninstall
 
 CHANGE MICROPHONE
-One microphone is managed per installation. Right-click the icon, choose
-Remove effect and restore configuration, then run setup again.
+Run setup again to add or update one or more microphones. Other installed
+inputs and your saved controls are kept. Voice and enable/disable controls
+apply to all installed microphones, including simultaneous use.
+In the tray, Microphone activity checks the selected input's actual processing.
 
 TROUBLESHOOTING
 "Windows protected your PC": the installer is not code-signed. Choose

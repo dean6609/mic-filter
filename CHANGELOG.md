@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.6.0 — 2026-10-08
+
+- Fix legacy-only registration being ignored on modern capture endpoints, including Bluetooth hands-free inputs. Setup uses a mode-aware stream effect on modern graphs, migrates existing associations safely and restores original stream properties and types on rollback/removal. The tray recognizes both routes; targeted restart now includes a uniquely matching Bluetooth hands-free function.
+
+- Fix updates failing to read saved voice options while the tray or audio host holds the settings file open. Setup shares read/write access and preserves saved settings through update and rollback.
+- Restore automatic selection and installation when only one connected, enabled microphone is found. Compatibility checks still apply; multiple microphones keep the console checklist.
+- Simple colored console setup with persistent microphone checks, number-based multiple selection and plain progress/results. Fresh installs default to Natural without a voice prompt; updates keep the saved profile. Setup explains single-click on/off and later voice changes from the tray.
+- Independent restore backups for multiple inputs, including migration of the previous single-input backup. Removal keeps other microphones registered; uninstall restores disconnected inputs too. Batch setup checks every selected input and restores the batch if capture fails.
+- Embedded microphone icon in the application and installer, with explicit icon references for Settings > Apps and shortcuts. Lossless PNG compression keeps all seven sizes without bloating the executables.
+- Gentler Clear and Broadcast profiles: less treble emphasis, moderate Broadcast compression with a soft knee and lower makeup gain. New Deep profile retains low fundamentals, reduces low-mid mud and adds restrained consonant presence without changing pitch.
+- Per-microphone activity counters and tray input selection prevent activity on one input from confirming another. Shared voice and enable/disable controls retain the 64-byte ABI.
+- Compact tray submenus for voice, silence and original sound. Microphone activity checks capture/filtering asynchronously and explains results in plain language. Diagnostics, log, removal, uninstall and startup-toggle commands are no longer shown in the tray; uninstall remains in Windows Installed apps.
+- The icon starts with Windows automatically. Startup and repeated launches preserve enable/disable state, fixing a second application launch unexpectedly toggling the filter. APO-reported version now matches the 0.6 registration.
+- Other audio applications and manufacturer processing effects remain untouched and appear unavailable in setup. Windows' discovery-only proxy and driver association metadata no longer cause false conflicts; capture and per-input processing are still checked. Physical compatibility and subjective voice quality require capture/listening checks.
+
 ## 0.5.3 — 2026-10-01
 
 - **Voice sound** presets in the tray menu: **Natural** (unchanged, default), **Clear** (removes rumble and low-mid boominess, adds presence and air) and **Broadcast** (stronger presence plus gentle compression for an even, polished voice). Both polished presets end in a soft limiter; switching presets crossfades without clicks. Processing cost is about 0.3% of one CPU core.

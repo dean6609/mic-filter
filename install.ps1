@@ -1,5 +1,5 @@
 ﻿# Install: attach the effect to one microphone (EndpointGuid, SourceDir).
-# Remove: restore that microphone and unregister the effect; application files stay.
+# Remove: restore that microphone; shared registration stays while other inputs use it.
 # Uninstall: restore every microphone and delete all MicFilter files, shortcuts and registrations.
 param(
     [Parameter(Mandatory=$true)][ValidateSet('Install','Remove','Uninstall')][string]$Action,
@@ -42,10 +42,7 @@ function Restore-Slot($backup) {
     $canRestorePrevious=$backup.HadSlot
     if($backup.PreviousSlot -eq $knownClownfish -and -not(Test-Path -LiteralPath ('HKLM:\SOFTWARE\Classes\CLSID\'+$knownClownfish+'\InprocServer32'))){$canRestorePrevious=$false}
     $expectedPrevious=if($canRestorePrevious){$backup.PreviousSlot}else{$null}
-    if($currentValue -eq $ownClsid -or $legacyClsids -contains $currentValue) {
-        if($canRestorePrevious){Set-EndpointEffect -Key $effectsKey -Name $effectSlot -Value $backup.PreviousSlot}
-        else{$effectsKey.DeleteValue($effectSlot,$false)}
-    } elseif($currentValue -ne $expectedPrevious) {throw 'Another application changed the device effect. Its configuration will not be overwritten.'}
+    Restore-EndpointSnapshot $effectsKey $expectedPrevious $backup.StreamValues
 }
 try {
     if(-not $ResultPath -and $Action -eq 'Uninstall'){$ResultPath=Join-Path $env:TEMP ('MicFilter-uninstall-'+[guid]::NewGuid().ToString('N')+'.txt')}
@@ -72,11 +69,14 @@ try {
         }
         Get-Process -Name MicFilter,WavoFilter -ErrorAction SilentlyContinue | Stop-Process -Force
         $step='Restore microphone configuration'
-        $backup=if(Test-Path -LiteralPath $backupPath){Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json}else{$null}
+        $backups=@(Read-InstallationBackups $backupPath)
         $restoredEndpoints=@()
         foreach($entry in @(Get-CaptureEffectSlots)){
             $effectsKey=Open-EndpointEffectsKey -SubKey ('SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture\'+$entry.EndpointText+'\FxProperties')
-            try{if($backup -and $backup.EndpointGuid -eq $entry.EndpointText){Restore-Slot $backup}else{$effectsKey.DeleteValue($effectSlot,$false)}}
+            $backup=$backups | Where-Object EndpointGuid -EQ $entry.EndpointText | Select-Object -First 1
+            try{if($backup){Restore-Slot $backup}else{
+                foreach($slot in @($effectSlot,$streamEffectSlot)){if(@($ownClsid)+$legacyClsids -contains $effectsKey.GetValue($slot)){$effectsKey.DeleteValue($slot,$false)}}
+            }}
             finally{$effectsKey.Dispose();$effectsKey=$null}
             Write-InstallerLog ('Microphone effect restored: '+$entry.EndpointText)
             $restoredEndpoints+=$entry.EndpointText
@@ -95,6 +95,7 @@ try {
             $link=Join-Path $links 'Wavo Filter.lnk';if((Test-Path -LiteralPath $link) -and $shell.CreateShortcut($link).TargetPath -like ($legacyProgramDir+'\*')){Remove-Item -LiteralPath $link -Force}
         }
         foreach($name in @('MicFilter','WavoFilter')){Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $name -ErrorAction SilentlyContinue}
+        Remove-ItemProperty -LiteralPath $machineRunKeyPath -Name 'MicFilter' -ErrorAction SilentlyContinue
         $step='Delete files'
         $pending=0;$leftovers=@()
         foreach($directory in @($programDir,$legacyProgramDir,(Join-Path $env:ProgramData 'MicFilter'),(Join-Path $env:ProgramData 'WavoFilter'))){
@@ -120,14 +121,23 @@ try {
     if($Action -eq 'Remove') {
         $step='Restore previous effect'
         if(-not(Test-Path -LiteralPath $backupPath)){throw 'No restore backup exists for this installation.'}
-        $backup=Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
-        if($backup.EndpointGuid -ne $endpointText){throw 'The restore backup belongs to another device.'}
+        $backups=@(Read-InstallationBackups $backupPath)
+        $backup=$backups | Where-Object EndpointGuid -EQ $endpointText | Select-Object -First 1
+        if(-not $backup){throw 'There is no restore backup for this microphone.'}
         Restore-Slot $backup
+        $remaining=@($backups | Where-Object EndpointGuid -NE $endpointText)
+        if($remaining.Count){
+            Save-InstallationBackups $backupPath $remaining
+            New-ItemProperty -LiteralPath $configPath -Name 'EndpointGuid' -Value $remaining[0].EndpointGuid -PropertyType String -Force | Out-Null
+            New-ItemProperty -LiteralPath $configPath -Name 'EndpointGuids' -Value @($remaining | ForEach-Object EndpointGuid) -PropertyType MultiString -Force | Out-Null
+            Write-InstallerResult 'MicFilter was removed from this microphone. Your other microphones and saved controls are unchanged. Reconnect this microphone to apply the change.'
+            $exitCode=0;return
+        }
+        if(@(Get-CaptureEffectSlots).Count){throw 'Another microphone still uses MicFilter. Its registration was kept; run setup to repair its restore backup.'}
         $stateFile=Join-Path $stateDir 'state.bin'
         if(Test-Path -LiteralPath $stateFile){$stream=[IO.File]::Open($stateFile,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);try{$stream.Position=8;$stream.Write([BitConverter]::GetBytes([int]0),0,4)}finally{$stream.Dispose()}}
         if(Test-Path -LiteralPath $classPath){Remove-Item -LiteralPath $classPath -Recurse -Force}
         if(Test-Path -LiteralPath $apoPath){Remove-Item -LiteralPath $apoPath -Recurse -Force}
-        Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'MicFilter' -ErrorAction SilentlyContinue
         if(Test-Path -LiteralPath $configPath){Remove-Item -LiteralPath $configPath -Recurse -Force}
         Remove-Item -LiteralPath $backupPath -Force
         Write-InstallerLog 'Effect removed; previous configuration restored.'
@@ -138,19 +148,21 @@ try {
         $sourceRoot=(Resolve-Path -LiteralPath $SourceDir).Path
         foreach($name in @('MicFilter.exe','MicFilterAPO.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){if(-not(Test-Path -LiteralPath (Join-Path $sourceRoot $name))){throw ('Missing '+$name)}}
         $previousValue=$effectsKey.GetValue($effectSlot)
-        if($previousValue -and $previousValue -ne $knownClownfish -and $previousValue -ne $ownClsid -and $legacyClsids -notcontains $previousValue){throw 'This microphone already uses another audio effect, which MicFilter does not replace.'}
-        foreach($otherSlot in @(1,5,6,7)){
-            $otherName='{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},'+$otherSlot
-            if($effectsKey.GetValue($otherName)){throw 'This microphone already uses other audio effects (for example manufacturer enhancements). MicFilter was not installed to avoid filtering twice.'}
-        }
+        Assert-CompatibleEffectChain $effectsKey
+        $useStream=Use-StreamEffect $effectsKey
+        $previousStream=@(Get-StreamSnapshot $effectsKey)
         $step='Save restore backup'
         New-Item -ItemType Directory -Path $stateDir,$programDir -Force | Out-Null
-        if(Test-Path -LiteralPath $backupPath){
-            $backup=Get-Content -LiteralPath $backupPath -Raw | ConvertFrom-Json
-            if($backup.EndpointGuid -ne $endpointText){throw 'MicFilter is already set up on another microphone. Right-click the MicFilter icon, choose "Remove effect and restore configuration", then try again.'}
-        }else{
+        $backups=@(Read-InstallationBackups $backupPath)
+        $backup=$backups | Where-Object EndpointGuid -EQ $endpointText | Select-Object -First 1
+        if(-not $backup){
+            if($previousValue -eq $ownClsid -or $legacyClsids -contains $previousValue -or $effectsKey.GetValue($streamEffectSlot) -eq $ownClsid){throw 'The original restore backup for this microphone is missing. Uninstall MicFilter, then run setup again.'}
             $backup=[pscustomobject]@{EndpointGuid=$endpointText;HadSlot=[bool]$previousValue;PreviousSlot=$previousValue;CreatedUtc=[DateTime]::UtcNow.ToString('o');SourceRelease='werman/v1.21'}
-            $backup | ConvertTo-Json | Set-Content -LiteralPath $backupPath -Encoding UTF8
+            $backups+=$backup
+        }
+        if($useStream -and -not $backup.PSObject.Properties['StreamValues']){
+            if($effectsKey.GetValue($streamEffectSlot) -eq $ownClsid){throw 'The original stream-effect backup is missing. Nothing was changed.'}
+            $backup | Add-Member NoteProperty StreamValues $previousStream
         }
         $step='Copy application files'
         foreach($name in @('MicFilter.exe','MicFilterAPO.dll','install.ps1','installer-registry.ps1','LICENSE','RNNOISE-LICENSE.txt','SPEEX-LICENSE.txt')){
@@ -184,7 +196,16 @@ try {
             [IO.File]::WriteAllBytes($optionsFile,$optionsBytes)
         }
         # Only the non-executable control files are writable by interactive users and the audio service.
-        foreach($controlFile in @($stateFile,$optionsFile)){
+        $telemetryDirectory=Join-Path $stateDir 'endpoints'
+        New-Item -ItemType Directory -Path $telemetryDirectory -Force | Out-Null
+        $telemetryFile=Join-Path $telemetryDirectory ($endpointText.ToUpperInvariant()+'.bin')
+        if(-not(Test-Path -LiteralPath $telemetryFile)){
+            $telemetryBytes=New-Object byte[] 64
+            [BitConverter]::GetBytes([int]0x5741564f).CopyTo($telemetryBytes,0)
+            [BitConverter]::GetBytes([int]1).CopyTo($telemetryBytes,4)
+            [IO.File]::WriteAllBytes($telemetryFile,$telemetryBytes)
+        }
+        foreach($controlFile in @($stateFile,$optionsFile,$telemetryFile)){
             $acl=[IO.File]::GetAccessControl($controlFile)
             foreach($sid in @('S-1-5-32-545','S-1-5-19')){
                 $acl.SetAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid),'Read,Write','Allow'))
@@ -192,7 +213,11 @@ try {
             [IO.File]::SetAccessControl($controlFile,$acl)
         }
         $oldDllPath=if(Test-Path -LiteralPath ($classPath+'\InprocServer32')){(Get-Item -LiteralPath ($classPath+'\InprocServer32')).GetValue('')}else{$null}
+        $oldBackupBytes=if(Test-Path -LiteralPath $backupPath){[IO.File]::ReadAllBytes($backupPath)}else{$null}
+        $oldConfiguration=if(Test-Path -LiteralPath $configPath){Get-ItemProperty -LiteralPath $configPath}else{$null}
         try{
+            # Persist the original slot before attaching the effect, including on upgrades.
+            Save-InstallationBackups $backupPath $backups
             $step='Register effect DLL'
             New-Item -Path ($classPath+'\InprocServer32') -Force | Out-Null
             Set-Item -LiteralPath ($classPath+'\InprocServer32') -Value $dllDestination
@@ -206,14 +231,27 @@ try {
             $interfaces=@('{FD7F2B29-24D0-4B5C-B177-592C39F9CA10}')
             for($i=0;$i -lt $interfaces.Count;$i++){New-ItemProperty -LiteralPath $apoPath -Name ('APOInterface'+$i) -Value $interfaces[$i] -PropertyType String -Force | Out-Null}
             $step='Attach effect to microphone'
-            Set-EndpointEffect -Key $effectsKey -Name $effectSlot -Value $ownClsid
-            New-ItemProperty -LiteralPath $configPath -Name 'EndpointGuid' -Value $endpointText -PropertyType String -Force | Out-Null
+            if($useStream){
+                $effectsKey.SetValue($streamModesSlot,[string[]]$streamModes,[Microsoft.Win32.RegistryValueKind]::MultiString)
+                Set-EndpointEffect -Key $effectsKey -Name $streamEffectSlot -Value $ownClsid
+                if(@($ownClsid)+$legacyClsids -contains $effectsKey.GetValue($effectSlot)){$effectsKey.DeleteValue($effectSlot,$false)}
+                Write-InstallerLog 'Attached as a mode-aware stream effect (SFX), preserving endpoint discovery.'
+            }else{Set-EndpointEffect -Key $effectsKey -Name $effectSlot -Value $ownClsid}
+            New-ItemProperty -LiteralPath $configPath -Name 'EndpointGuid' -Value $backups[0].EndpointGuid -PropertyType String -Force | Out-Null
+            New-ItemProperty -LiteralPath $configPath -Name 'EndpointGuids' -Value @($backups | ForEach-Object EndpointGuid) -PropertyType MultiString -Force | Out-Null
         }catch{
             $installError=$_
             try{
-                if($previousValue){Set-EndpointEffect -Key $effectsKey -Name $effectSlot -Value $previousValue}else{$effectsKey.DeleteValue($effectSlot,$false)}
+                Restore-EndpointSnapshot $effectsKey $previousValue $previousStream
                 if($oldDllPath){Set-Item -LiteralPath ($classPath+'\InprocServer32') -Value $oldDllPath}
                 else{if(Test-Path -LiteralPath $classPath){Remove-Item -LiteralPath $classPath -Recurse -Force};if(Test-Path -LiteralPath $apoPath){Remove-Item -LiteralPath $apoPath -Recurse -Force}}
+                if($oldBackupBytes){[IO.File]::WriteAllBytes($backupPath,$oldBackupBytes)}elseif(Test-Path -LiteralPath $backupPath){Remove-Item -LiteralPath $backupPath -Force}
+                if($oldConfiguration){
+                    foreach($name in @('EndpointGuid','EndpointGuids')){
+                        if($oldConfiguration.$name){New-ItemProperty -LiteralPath $configPath -Name $name -Value $oldConfiguration.$name -PropertyType $(if($name -eq 'EndpointGuids'){'MultiString'}else{'String'}) -Force | Out-Null}
+                        else{Remove-ItemProperty -LiteralPath $configPath -Name $name -ErrorAction SilentlyContinue}
+                    }
+                }
                 Write-InstallerLog 'The previous effect was preserved or restored.'
             }catch{Write-InstallerLog ('Restore error: '+$_.Exception.Message)}
             throw $installError

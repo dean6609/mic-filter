@@ -5,6 +5,7 @@
 #include <propvarutil.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <knownfolders.h>
 #include <objbase.h>
 #include <vector>
 #include <iostream>
@@ -12,17 +13,20 @@
 #include <filesystem>
 #include "audio_check.h"
 #include "apo_sdk.h"
+#include "tray_menu.h"
 
 namespace {
 constexpr UINT trayMessage=WM_APP+1,refreshMessage=WM_APP+2;
 constexpr UINT idToggle=100,idInstall=101,idRemove=102,idExit=103,idInfo=104,idStartup=105;
 constexpr UINT idReference=110,idGentle=111,idNoGate=112,idWetFull=113,idWetPartial=114;
 constexpr UINT idInstallerLog=115,idUninstall=116;
-constexpr UINT idVoice=120; // idVoice+preset, presets 0..2
+constexpr UINT idVoice=120; // idVoice+preset, presets 0..3
+constexpr UINT idAddMicrophones=130,idDevice=1000;
 struct Device{std::wstring id,name,guid;};
 std::vector<Device> devices;
 Device selected;
 micfilter::StateMapping mapping;
+micfilter::StateMapping endpointTelemetry;
 micfilter::OptionsMapping options;
 HWND window=nullptr;
 NOTIFYICONDATAW tray{};
@@ -32,7 +36,12 @@ std::wstring configuredGuid;
 UINT taskbarCreated=0;
 HANDLE installerProcess=nullptr;
 bool installerRemoving=false;
-std::wstring installerResultPath,lastInstallerLog;
+std::wstring installerResultPath,lastInstallerLog,installerEndpointGuid;
+HANDLE activityProcess=nullptr,activityPipe=nullptr;
+Device activityDevice;
+micfilter::StateMapping activityTelemetry;
+LONG64 activityCallbacks=0,activityFrames=0;
+ULONGLONG activityStarted=0;
 HWND existingTray(){auto current=FindWindowW(micfilter::kWindowClass,nullptr);return current?current:FindWindowW(L"WavoFilter.Native.Tray.v1",nullptr);}
 void printUtf8(const std::wstring& text){const int count=WideCharToMultiByte(CP_UTF8,0,text.data(),static_cast<int>(text.size()),nullptr,0,nullptr,nullptr);std::string bytes(count,'\0');WideCharToMultiByte(CP_UTF8,0,text.data(),static_cast<int>(text.size()),bytes.data(),count,nullptr,nullptr);DWORD written=0;WriteFile(GetStdHandle(STD_OUTPUT_HANDLE),bytes.data(),static_cast<DWORD>(bytes.size()),&written,nullptr);}
 void checkCom(){
@@ -68,7 +77,7 @@ std::wstring readResult(const std::wstring& path){
 }
 std::wstring prop(IPropertyStore* store,const PROPERTYKEY& key){PROPVARIANT value;PropVariantInit(&value);std::wstring result;if(SUCCEEDED(store->GetValue(key,&value))&&value.vt==VT_LPWSTR&&value.pwszVal)result=value.pwszVal;PropVariantClear(&value);return result;}
 void enumerate(){
-    devices.clear();selected={};
+    const auto previous=selected.guid;devices.clear();selected={};
     wchar_t configured[128]{};DWORD configuredBytes=sizeof(configured);
     const auto configuration=L"SOFTWARE\\Classes\\CLSID\\"+std::wstring(micfilter::kClsidText);
     configuredGuid=RegGetValueW(HKEY_LOCAL_MACHINE,configuration.c_str(),L"EndpointGuid",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,configured,&configuredBytes)==ERROR_SUCCESS?configured:L"";
@@ -87,14 +96,29 @@ void enumerate(){
             }
         }collection->Release();
     }enumerator->Release();
+    // Prefer the user's tray selection, then any connected input actually attached to our APO.
+    for(const auto& d:devices){
+        const auto path=L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\"+d.guid+L"\\FxProperties";
+        for(const auto* slot:{L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},5"}){
+            wchar_t value[128]{};DWORD bytes=sizeof(value);
+            if(RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),slot,RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,micfilter::kClsidText)==0){
+                if(selected.id.empty()||_wcsicmp(d.guid.c_str(),previous.c_str())==0)selected=d;break;
+            }
+        }
+    }
     if(configuredGuid.empty()&&devices.size()==1)selected=devices.front();
+    endpointTelemetry.close();if(!selected.guid.empty())endpointTelemetry.openEndpoint(selected.guid);
 }
-bool installed(){
-    if(selected.guid.empty())return false;
-    auto path=L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\"+selected.guid+L"\\FxProperties";
-    wchar_t value[128]{};DWORD bytes=sizeof(value);
-    return RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,micfilter::kClsidText)==0;
+bool installed(const Device& device){
+    if(device.guid.empty())return false;
+    auto path=L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\"+device.guid+L"\\FxProperties";
+    for(const auto* slot:{L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2",L"{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},5"}){
+        wchar_t value[128]{};DWORD bytes=sizeof(value);
+        if(RegGetValueW(HKEY_LOCAL_MACHINE,path.c_str(),slot,RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value,&bytes)==ERROR_SUCCESS&&_wcsicmp(value,micfilter::kClsidText)==0)return true;
+    }
+    return false;
 }
+bool installed(){return installed(selected);}
 bool componentizedEndpoint(){
     if(selected.guid.empty())return false;
     const auto path=L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\MMDevices\\Audio\\Capture\\"+selected.guid+L"\\FxProperties";
@@ -121,15 +145,16 @@ HICON createIcon(COLORREF color){
 void update(){
     if(!mapping.get())mapping.open();
     auto* state=mapping.get();int icon=2;
-    if(installerProcess)status=installerRemoving?L"Restoring configuration...":L"Installing effect...";
-    else if(selected.id.empty())status=L"Selected microphone disconnected";
-    else if(!installed()){status=L"Original audio; effect not installed";icon=1;}
-    else if(!state)status=L"Controls unavailable; original audio";
-    else if(!micfilter::read(state->enabled)){status=L"Original audio";icon=1;}
-    else if(micfilter::recentAudio(state)){
-        if(micfilter::read(state->formatSupported)){status=L"Filter confirmed: RNNoise v1.21";icon=0;}
-        else status=L"Unsupported format; original audio";
-    }else status=micfilter::read(state->producerPid)?L"Filter enabled; waiting for microphone use":L"Effect installed; processing not confirmed";
+    if(activityProcess)status=L"Checking your microphone...";
+    else if(installerProcess)status=L"Updating your microphone...";
+    else if(selected.id.empty())status=L"Connect your microphone";
+    else if(!installed()){status=L"Add a microphone to start";icon=1;}
+    else if(!state)status=L"Run setup to finish";
+    else if(!micfilter::read(state->enabled)){status=L"Noise reduction: Off";icon=1;}
+    else if(micfilter::recentAudio(endpointTelemetry.get())){
+        if(micfilter::read(endpointTelemetry.get()->formatSupported)&&micfilter::read(endpointTelemetry.get()->processedFrames)>0){status=L"Reducing noise now";icon=0;}
+        else status=L"Check microphone activity";
+    }else status=L"Turned on - check microphone activity";
     tray.hIcon=icons[icon];auto tip=L"MicFilter - "+status;wcsncpy_s(tray.szTip,tip.c_str(),_TRUNCATE);Shell_NotifyIconW(NIM_MODIFY,&tray);
 }
 void toggle(){if(!installed()||!mapping.get()){MessageBoxW(window,L"Run MicFilter-Setup.exe to install the effect on a microphone first.",L"MicFilter",MB_OK|MB_ICONINFORMATION);return;}auto* p=mapping.get();InterlockedExchange(&p->enabled,!micfilter::read(p->enabled));update();}
@@ -142,8 +167,8 @@ void installer(bool remove){
     if(made!=ERROR_SUCCESS&&made!=ERROR_ALREADY_EXISTS&&made!=ERROR_FILE_EXISTS){MessageBoxW(window,L"Could not create the folder for the installation report.",L"MicFilter",MB_OK|MB_ICONERROR);return;}
     GUID attempt{};wchar_t attemptText[40]{};if(FAILED(CoCreateGuid(&attempt))||!StringFromGUID2(attempt,attemptText,40))return;
     installerResultPath=logs+L"\\installer-"+attemptText+L".txt";
+    installerEndpointGuid=selected.guid;
     lastInstallerLog=logs+L"\\installer-"+attemptText+L".log";
-    if(remove&&mapping.get())InterlockedExchange(&mapping.get()->enabled,0);
     // GUID comes from PKEY_AudioEndpoint_GUID. It is validated again by the script.
     const auto args=L"-NoProfile -ExecutionPolicy Bypass -File \""+dir+L"\\install.ps1\" -Action "+(remove?L"Remove":L"Install")+L" -EndpointGuid \""+selected.guid+L"\" -SourceDir \""+dir+L"\" -ResultPath \""+installerResultPath+L"\"";
     SHELLEXECUTEINFOW info{};info.cbSize=sizeof(info);info.fMask=SEE_MASK_NOCLOSEPROCESS;info.hwnd=window;info.lpVerb=L"runas";
@@ -158,8 +183,8 @@ void installerFinished(){
     DWORD code=STILL_ACTIVE;if(!GetExitCodeProcess(installerProcess,&code)||code==STILL_ACTIVE)return;
     CloseHandle(installerProcess);installerProcess=nullptr;
     enumerate();update();
-    const bool success=code==0&&(installerRemoving?!installed():installed());
-    if(success&&!installerRemoving){if(!mapping.get())mapping.open();if(auto* p=mapping.get())InterlockedExchange(&p->enabled,1);update();}
+    const bool targetInstalled=installed(Device{L"",L"",installerEndpointGuid});
+    const bool success=code==0&&(installerRemoving?!targetInstalled:targetInstalled);
     auto message=readResult(installerResultPath);
     if(message.empty())message=L"The installer exited with code "+std::to_wstring(code)+L" and did not produce a report.\nCheck that all application files are present.\n\nExpected log: "+lastInstallerLog;
     else if(code==0&&!success)message=L"The installer finished, but the microphone change was not confirmed.\n\n"+message;
@@ -189,52 +214,78 @@ void openInstallerLog(){
     const auto log=latestInstallerLog();if(log.empty()){MessageBoxW(window,L"No installation logs are available yet.",L"MicFilter",MB_OK);return;}
     const auto argument=L"\""+log+L"\"";ShellExecuteW(window,L"open",L"notepad.exe",argument.c_str(),nullptr,SW_SHOWNORMAL);
 }
-bool startupEnabled(){DWORD type=0,size=0;return RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",L"MicFilter",RRF_RT_REG_SZ,&type,nullptr,&size)==ERROR_SUCCESS;}
 void startup(){
+    constexpr auto path=L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    DWORD size=0;
+    if(RegGetValueW(HKEY_LOCAL_MACHINE,path,L"MicFilter",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,nullptr,&size)==ERROR_SUCCESS){
+        // Machine-wide setup already launches the tray for this account; avoid duplicate starts.
+        RegDeleteKeyValueW(HKEY_CURRENT_USER,path,L"MicFilter");return;
+    }
     HKEY key=nullptr;if(RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,nullptr,0,KEY_SET_VALUE,nullptr,&key,nullptr)!=ERROR_SUCCESS)return;
-    if(startupEnabled())RegDeleteValueW(key,L"MicFilter");
-    else{wchar_t path[32768]{};GetModuleFileNameW(nullptr,path,32768);std::wstring value=L"\""+std::wstring(path)+L"\"";RegSetValueExW(key,L"MicFilter",0,REG_SZ,reinterpret_cast<const BYTE*>(value.c_str()),static_cast<DWORD>((value.size()+1)*2));}
+    wchar_t executable[32768]{};GetModuleFileNameW(nullptr,executable,32768);std::wstring launchPath=executable;
+    PWSTR programFiles=nullptr;
+    if(SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramFiles,0,nullptr,&programFiles))){
+        const auto installedPath=std::wstring(programFiles)+L"\\MicFilter\\MicFilter.exe";CoTaskMemFree(programFiles);
+        if(GetFileAttributesW(installedPath.c_str())!=INVALID_FILE_ATTRIBUTES)launchPath=installedPath;
+    }
+    std::wstring value=L"\""+launchPath+L"\"";
+    RegSetValueExW(key,L"MicFilter",0,REG_SZ,reinterpret_cast<const BYTE*>(value.c_str()),static_cast<DWORD>((value.size()+1)*2));
     RegCloseKey(key);
 }
 void details(){
     update();std::wstring text=L"Status: "+status+L"\nMicrophone: "+(selected.name.empty()?L"Microphone not detected":selected.name)+L"\nEngine: RNNoise model from Werman v1.21\n";
-    text+=telemetryText(mapping.get());
+    text+=telemetryText(endpointTelemetry.get());
+    text+=L"\nVoice and enable/disable controls apply to every installed microphone.\nActivity above belongs only to the microphone selected in the menu.\n";
     if(!installed())text+=L"\nThe effect is not installed. Run MicFilter-Setup.exe to select a microphone.";
     else text+=L"\nOne click: enable/disable. Right-click: options.\nThe filter keeps its setting after reboot and works without this icon.\nExit disables the filter; opening the app does not enable it.\nOpen an app that uses the microphone to check effect activity.";
     const auto log=latestInstallerLog();if(!log.empty())text+=L"\n\nLatest installation log:\n"+log;
     MessageBoxW(window,text.c_str(),L"MicFilter - diagnostics",MB_OK|MB_ICONINFORMATION);
 }
-void heading(HMENU m,const wchar_t* text){AppendMenuW(m,MF_SEPARATOR,0,nullptr);AppendMenuW(m,MF_STRING|MF_GRAYED,0,text);}
-void choice(HMENU m,bool enabled,bool checked,UINT id,const wchar_t* text){AppendMenuW(m,MF_STRING|(enabled?0:MF_GRAYED)|(checked?MF_CHECKED:0),id,text);}
+void checkMicrophoneActivity(){
+    if(activityProcess||installerProcess||selected.guid.empty())return;
+    activityDevice=selected;activityTelemetry.close();activityTelemetry.openEndpoint(selected.guid);
+    auto* telemetry=activityTelemetry.get();
+    activityCallbacks=telemetry?micfilter::read(telemetry->callbacks):0;
+    activityFrames=telemetry?micfilter::read(telemetry->processedFrames):0;
+    SECURITY_ATTRIBUTES attributes{sizeof(attributes),nullptr,TRUE};HANDLE writePipe=nullptr;
+    if(!CreatePipe(&activityPipe,&writePipe,&attributes,0))return;
+    SetHandleInformation(activityPipe,HANDLE_FLAG_INHERIT,0);
+    const auto executable=executableDirectory()+L"\\MicFilter.exe";
+    auto command=L"\""+executable+L"\" --probe-audio --endpoint \""+selected.guid+L"\"";
+    STARTUPINFOW startupInfo{};startupInfo.cb=sizeof(startupInfo);startupInfo.dwFlags=STARTF_USESTDHANDLES;
+    startupInfo.hStdOutput=writePipe;startupInfo.hStdError=writePipe;startupInfo.hStdInput=GetStdHandle(STD_INPUT_HANDLE);
+    PROCESS_INFORMATION child{};
+    const bool started=CreateProcessW(executable.c_str(),command.data(),nullptr,nullptr,TRUE,CREATE_NO_WINDOW,nullptr,nullptr,&startupInfo,&child)!=FALSE;
+    CloseHandle(writePipe);
+    if(!started){CloseHandle(activityPipe);activityPipe=nullptr;activityTelemetry.close();MessageBoxW(window,L"Could not check this microphone. Run setup again if its application files are missing.",L"MicFilter",MB_OK|MB_ICONINFORMATION);return;}
+    activityProcess=child.hProcess;CloseHandle(child.hThread);activityStarted=GetTickCount64();update();
+}
+void activityFinished(){
+    if(!activityProcess)return;
+    DWORD code=STILL_ACTIVE;if(!GetExitCodeProcess(activityProcess,&code))return;
+    if(code==STILL_ACTIVE){if(GetTickCount64()-activityStarted<15000)return;TerminateProcess(activityProcess,1);return;}
+    std::string report;char chunk[1024]{};DWORD bytes=0;
+    while(report.size()<8192&&ReadFile(activityPipe,chunk,sizeof(chunk),&bytes,nullptr)&&bytes)report.append(chunk,bytes);
+    CloseHandle(activityProcess);CloseHandle(activityPipe);activityProcess=activityPipe=nullptr;
+    UINT64 captured=0;const auto marker=report.find("Frames=");if(marker!=std::string::npos){std::istringstream value(report.substr(marker+7));value>>captured;}
+    auto* telemetry=activityTelemetry.get();auto* state=mapping.get();
+    const bool observed=telemetry&&micfilter::read(telemetry->callbacks)>activityCallbacks;
+    const bool filtered=observed&&micfilter::read(telemetry->processedFrames)>activityFrames&&micfilter::read(telemetry->formatSupported);
+    std::wstring message=activityDevice.name+L"\n\n";
+    if(!state||!micfilter::read(state->enabled))message+=L"Noise reduction is off. Click the MicFilter icon once to turn it on, then check again.";
+    else if(code!=0||!captured)message+=L"Windows could not open this microphone. Close other audio apps and check microphone permissions in Windows Settings.";
+    else if(filtered)message+=L"Noise reduction is working on this microphone.";
+    else if(observed)message+=L"Windows opened MicFilter, but noise reduction did not run. Check that it is turned on, then try again.";
+    else message+=L"Microphone audio works, but MicFilter noise reduction was not detected on this input.\n\nCheck Audio enhancements in this microphone's Windows sound settings. If they are already on, this driver may need a different processing route. You can use another microphone meanwhile.";
+    message+=L"\n\nThis check saves no recordings.";
+    activityTelemetry.close();update();MessageBoxW(window,message.c_str(),L"MicFilter - Microphone activity",MB_OK|MB_ICONINFORMATION);
+}
 void menu(){
     update();auto* state=mapping.get();if(!options.get())options.open();auto* option=options.get();
-    HMENU m=CreatePopupMenu();const bool ready=installed()&&state;
-    AppendMenuW(m,MF_STRING|MF_DISABLED,0,status.c_str());AppendMenuW(m,MF_SEPARATOR,0,nullptr);
-    AppendMenuW(m,MF_STRING|(ready?0:MF_GRAYED),idToggle,ready&&micfilter::read(state->enabled)?L"Disable filter (original audio)":L"Enable filter");
-    const LONG voice=option?micfilter::read(option->voicePreset):0;
-    heading(m,L"Voice sound");
-    choice(m,ready&&option,voice==0,idVoice+0,L"    Natural (as captured)");
-    choice(m,ready&&option,voice==1,idVoice+1,L"    Clear (brighter, less boomy)");
-    choice(m,ready&&option,voice==2,idVoice+2,L"    Broadcast (polished, even volume)");
-    const LONG threshold=state?micfilter::read(state->thresholdPermille):850;
-    heading(m,L"Silence between words");
-    choice(m,ready,threshold==0,idNoGate,L"    Off: noise removal only (recommended)");
-    choice(m,ready,threshold==600,idGentle,L"    Balanced: silence pauses, 60% voice detection");
-    choice(m,ready,threshold==850,idReference,L"    Strict: silence pauses, 85% voice detection");
-    const LONG wet=state?micfilter::read(state->wetPermille):1000;
-    heading(m,L"Original microphone sound");
-    choice(m,ready,wet==1000,idWetFull,L"    0%: cleanest");
-    choice(m,ready,wet==850,idWetPartial,L"    15%: more natural, some noise returns");
-    AppendMenuW(m,MF_SEPARATOR,0,nullptr);
-    AppendMenuW(m,MF_STRING,idInfo,L"Diagnostics");
-    AppendMenuW(m,MF_STRING,idInstallerLog,L"View installation log");
-    AppendMenuW(m,MF_SEPARATOR,0,nullptr);
-    AppendMenuW(m,MF_STRING|(selected.guid.empty()||installerProcess?MF_GRAYED:0),idInstall,L"Install effect on selected microphone...");
-    AppendMenuW(m,MF_STRING|(installed()&&!installerProcess?0:MF_GRAYED),idRemove,L"Remove effect and restore configuration...");
-    AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idUninstall,L"Uninstall MicFilter...");
-    // The filter works without the tray app; this only controls the icon.
-    AppendMenuW(m,MF_STRING|(startupEnabled()?MF_CHECKED:0),idStartup,L"Show this icon when Windows starts");
-    AppendMenuW(m,MF_STRING|(installerProcess?MF_GRAYED:0),idExit,L"Exit and disable filter");
+    micfilter::TrayMenuSettings settings{status,installed()&&state,option!=nullptr,installerProcess||activityProcess,
+        option?micfilter::read(option->voicePreset):0,state?micfilter::read(state->thresholdPermille):0,state?micfilter::read(state->wetPermille):1000,{}};
+    for(size_t i=0;i<devices.size();++i)if(installed(devices[i]))settings.inputs.push_back({devices[i].name,idDevice+static_cast<UINT>(i),devices[i].guid==selected.guid});
+    HMENU m=micfilter::createTrayMenu(settings);
     POINT point{};GetCursorPos(&point);SetForegroundWindow(window);const auto command=TrackPopupMenu(m,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,window,nullptr);DestroyMenu(m);
     if(command)PostMessageW(window,WM_COMMAND,command,0);PostMessageW(window,WM_NULL,0,0);Shell_NotifyIconW(NIM_SETFOCUS,&tray);
 }
@@ -255,34 +306,80 @@ LRESULT CALLBACK procedure(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp){
     if(msg==taskbarCreated){Shell_NotifyIconW(NIM_ADD,&tray);Shell_NotifyIconW(NIM_SETVERSION,&tray);update();return 0;}
     switch(msg){
     case trayMessage:{const auto event=LOWORD(lp);if(event==NIN_SELECT||event==NIN_KEYSELECT)toggle();else if(event==WM_CONTEXTMENU)menu();return 0;}
-    case WM_TIMER:installerFinished();update();return 0;
+    case WM_TIMER:installerFinished();activityFinished();update();return 0;
     case refreshMessage:enumerate();update();return 0;
-    case micfilter::kControlMessage:toggle();return 0;
-    case WM_COMMAND:{auto* p=mapping.get();switch(LOWORD(wp)){
+    case micfilter::kControlMessage:update();return 0;
+    case WM_COMMAND:{auto* p=mapping.get();
+        if(LOWORD(wp)>=idDevice&&LOWORD(wp)<idDevice+devices.size()){
+            if(!activityProcess){selected=devices[LOWORD(wp)-idDevice];endpointTelemetry.close();endpointTelemetry.openEndpoint(selected.guid);checkMicrophoneActivity();}update();return 0;
+        }
+        switch(LOWORD(wp)){
         case idToggle:toggle();break;case idInfo:details();break;case idInstallerLog:openInstallerLog();break;case idInstall:installer(false);break;case idRemove:installer(true);break;
         case idUninstall:if(!installerProcess&&uninstall(hwnd))DestroyWindow(hwnd);break;
         case idStartup:startup();break;case idReference:if(p)InterlockedExchange(&p->thresholdPermille,850);break;
         case idGentle:if(p)InterlockedExchange(&p->thresholdPermille,600);break;case idNoGate:if(p)InterlockedExchange(&p->thresholdPermille,0);break;
         case idWetFull:if(p)InterlockedExchange(&p->wetPermille,1000);break;case idWetPartial:if(p)InterlockedExchange(&p->wetPermille,850);break;
-        case idVoice+0:case idVoice+1:case idVoice+2:if(auto* o=options.get())InterlockedExchange(&o->voicePreset,static_cast<LONG>(LOWORD(wp)-idVoice));break;
+        case idVoice+0:case idVoice+1:case idVoice+2:case idVoice+3:if(auto* o=options.get())InterlockedExchange(&o->voicePreset,static_cast<LONG>(LOWORD(wp)-idVoice));break;
+        case idAddMicrophones:MessageBoxW(hwnd,L"Run your downloaded MicFilter-Setup.exe again.\n\nType microphone numbers to check or uncheck them, then press Enter to continue. Already installed inputs update safely; your saved controls and other microphones are kept.",L"Add microphones",MB_OK|MB_ICONINFORMATION);break;
         case idExit:DestroyWindow(hwnd);break;}update();return 0;}
-    case WM_CLOSE:if(installerProcess)return 0;DestroyWindow(hwnd);return 0;
+    case WM_CLOSE:if(installerProcess||activityProcess)return 0;DestroyWindow(hwnd);return 0;
     case WM_DESTROY:if(auto* p=mapping.get())InterlockedExchange(&p->enabled,0);Shell_NotifyIconW(NIM_DELETE,&tray);PostQuitMessage(0);return 0;
     }return DefWindowProcW(hwnd,msg,wp,lp);
+}
+bool controllerSelfTest(){
+    // Exercise the real window message handler against private controls, never the installed
+    // microphone. Older launchers can still send kControlMessage to an existing new tray.
+    wchar_t previous[32768]{},temp[32768]{},text[40]{};GUID id{};
+    const auto length=GetEnvironmentVariableW(L"ProgramData",previous,32768);
+    if(!length||length>=32768||!GetTempPathW(32768,temp)||FAILED(CoCreateGuid(&id))||!StringFromGUID2(id,text,40))return false;
+    const auto root=std::wstring(temp)+L"MicFilter-controller-test-"+text,directory=root+L"\\MicFilter",file=directory+L"\\state.bin";
+    if(!CreateDirectoryW(root.c_str(),nullptr))return false;
+    bool passed=false;
+    if(CreateDirectoryW(directory.c_str(),nullptr)){
+        micfilter::SharedState state{};state.magic=micfilter::kMagic;state.version=micfilter::kStateVersion;state.enabled=1;
+        HANDLE handle=CreateFileW(file.c_str(),GENERIC_WRITE,0,nullptr,CREATE_NEW,0,nullptr);DWORD bytes=0;
+        const bool written=handle!=INVALID_HANDLE_VALUE&&WriteFile(handle,&state,sizeof(state),&bytes,nullptr)&&bytes==sizeof(state);
+        if(handle!=INVALID_HANDLE_VALUE)CloseHandle(handle);
+        if(written&&SetEnvironmentVariableW(L"ProgramData",root.c_str())&&mapping.open()){
+            WNDCLASSW cls{};cls.hInstance=GetModuleHandleW(nullptr);cls.lpfnWndProc=procedure;cls.lpszClassName=L"MicFilter.Controller.PrivateTest";RegisterClassW(&cls);
+            window=CreateWindowExW(0,cls.lpszClassName,L"Private controller test",0,0,0,0,0,nullptr,nullptr,cls.hInstance,nullptr);
+            if(window){
+                SendMessageW(window,micfilter::kControlMessage,0,0);passed=micfilter::read(mapping.get()->enabled)==1;
+                InterlockedExchange(&mapping.get()->enabled,0);SendMessageW(window,micfilter::kControlMessage,0,0);
+                passed=passed&&micfilter::read(mapping.get()->enabled)==0;
+                InterlockedExchange(&mapping.get()->enabled,1);DestroyWindow(window);window=nullptr;
+                passed=passed&&micfilter::read(mapping.get()->enabled)==0;
+            }
+            mapping.close();
+        }
+        SetEnvironmentVariableW(L"ProgramData",previous);DeleteFileW(file.c_str());RemoveDirectoryW(directory.c_str());
+    }
+    RemoveDirectoryW(root.c_str());return passed;
 }
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int){
     // Windows PowerShell 5.1 must build its own module path; one inherited from PowerShell 7 breaks cmdlet loading.
     SetEnvironmentVariableW(L"PSModulePath",nullptr);
-    CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);enumerate();
+    CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     int argc=0;auto** argv=CommandLineToArgvW(GetCommandLineW(),&argc);
+    if(argc==2&&std::wstring(argv[1])==L"--self-test-menu"){
+        const bool passed=micfilter::trayMenuSelfTest()&&controllerSelfTest();printUtf8(passed?L"PASS tray: compact menu, saved on/off state on reopening, exit disables; private controls.\n":L"FAIL tray/controller.\n");
+        LocalFree(argv);CoUninitialize();return passed?0:1;
+    }
+    enumerate();
     if(argc>1){std::wstring command=argv[1];mapping.open();int result=0;
+        if(argc>2){
+            if(argc!=4||std::wstring(argv[2])!=L"--endpoint"){LocalFree(argv);CoUninitialize();return 2;}
+            GUID guid{};if(FAILED(CLSIDFromString(argv[3],&guid))){LocalFree(argv);CoUninitialize();return 2;}
+            selected={};for(const auto& d:devices)if(_wcsicmp(d.guid.c_str(),argv[3])==0)selected=d;
+            endpointTelemetry.close();if(!selected.guid.empty())endpointTelemetry.openEndpoint(selected.guid);
+        }
         if(command==L"--devices"||command==L"--status"){
             std::wostringstream output;for(const auto& d:devices)output<<d.name<<L" | "<<d.guid<<L"\n";
             output<<L"Selected microphone detected: "<<(!selected.id.empty())<<L"\nMicFilter APO installed: "<<installed()<<L"\n";
             output<<L"Microsoft Voice Clarity association: "<<componentizedEndpoint()<<L"\n";
             if(auto* p=mapping.get())output<<L"Enabled: "<<micfilter::read(p->enabled)<<L"\n";
-            output<<telemetryText(mapping.get());
+            output<<telemetryText(endpointTelemetry.get());
             printUtf8(output.str());
         }else if(command==L"--check-com"){
             checkCom();
@@ -304,8 +401,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR,int){
         }else result=2;
         LocalFree(argv);CoUninitialize();return result;
     }LocalFree(argv);
+    startup();
     HANDLE singleton=CreateMutexW(nullptr,FALSE,L"Local\\MicFilter.Tray.v1");
-    if(GetLastError()==ERROR_ALREADY_EXISTS){if(auto existing=existingTray())PostMessageW(existing,micfilter::kControlMessage,0,0);CloseHandle(singleton);CoUninitialize();return 0;}
+    if(GetLastError()==ERROR_ALREADY_EXISTS){CloseHandle(singleton);CoUninitialize();return 0;}
     icons[0]=createIcon(RGB(75,210,125));icons[1]=createIcon(RGB(160,165,175));icons[2]=createIcon(RGB(240,180,65));
     WNDCLASSW cls{};cls.hInstance=instance;cls.lpfnWndProc=procedure;cls.lpszClassName=micfilter::kWindowClass;RegisterClassW(&cls);
     window=CreateWindowExW(0,micfilter::kWindowClass,L"MicFilter",0,0,0,0,0,nullptr,nullptr,instance,nullptr);

@@ -7,9 +7,6 @@ namespace {
 constexpr double kRate=48000;
 constexpr double kPi=3.14159265358979323846;
 constexpr float kBlendStep=1.0f/480;      // 10 ms crossfade when the preset changes
-constexpr float kThresholdDb=-24.0f;      // Broadcast compressor
-constexpr float kRatio=3.0f;
-constexpr float kMakeupDb=6.0f;
 constexpr float kKnee=0.9f;               // soft limiter starts at -0.9 dBFS
 // Coefficients from the RBJ Audio EQ Cookbook, normalized by a0.
 VoiceChain::Biquad normalized(double b0,double b1,double b2,double a0,double a1,double a2){
@@ -38,11 +35,16 @@ float softLimit(float x){
 }
 
 VoiceChain::VoiceChain(){
-    presets_[1].eq={highPass(80,0.707),peak(300,1.0,-2.5),peak(3500,0.9,3.0),shelf(10000,2.0,true),Biquad{}};
-    presets_[2].eq={highPass(90,0.707),shelf(150,2.0,false),peak(350,1.0,-3.0),peak(4000,0.9,4.0),shelf(11000,3.0,true)};
+    presets_[1].eq={highPass(65,0.707),peak(280,0.9,-1.5),peak(3000,0.8,1.8),shelf(9500,0.5,true),Biquad{}};
+    presets_[2].eq={highPass(60,0.707),shelf(140,0.8,false),peak(320,0.9,-1.8),peak(2800,0.8,1.5),shelf(9500,0.5,true)};
     presets_[2].compress=true;
-    attack_=std::exp(-1.0f/(0.005f*48000));   // 5 ms
-    release_=std::exp(-1.0f/(0.150f*48000));  // 150 ms
+    presets_[3].eq={highPass(40,0.707),shelf(130,1.2,false),peak(250,0.9,-2.0),peak(2200,0.8,1.2),shelf(6500,-1.0,true)};
+    presets_[3].compress=true;
+    presets_[3].threshold=-18;presets_[3].ratio=1.6f;presets_[3].makeup=1.5f;
+    for(unsigned i=2;i<4;++i){
+        presets_[i].attack=std::exp(-1.0f/(0.012f*48000));
+        presets_[i].release=std::exp(-1.0f/(0.200f*48000));
+    }
 }
 void VoiceChain::reset() noexcept {history_={};envelope_=0;}
 float VoiceChain::polish(unsigned channel,float x) noexcept {
@@ -56,7 +58,7 @@ float VoiceChain::polish(unsigned channel,float x) noexcept {
     return x;
 }
 void VoiceChain::process(std::array<std::array<float,480>,8>& block,unsigned channels,unsigned preset) noexcept {
-    preset=std::min(preset,2u);
+    preset=std::min(preset,3u);
     for(unsigned i=0;i<480;++i){
         if(preset!=current_){
             blend_=std::max(0.0f,blend_-kBlendStep);
@@ -67,10 +69,13 @@ void VoiceChain::process(std::array<std::array<float,480>,8>& block,unsigned cha
         for(unsigned c=0;c<channels;++c){polished[c]=polish(c,block[c][i]);level=std::max(level,std::fabs(polished[c]));}
         float gain=1;
         if(presets_[current_].compress){
+            const auto& p=presets_[current_];
             // One envelope for all channels keeps the stereo image stable.
-            envelope_=level>envelope_?attack_*envelope_+(1-attack_)*level:release_*envelope_+(1-release_)*level;
-            const float over=20*std::log10(envelope_+1e-9f)-kThresholdDb;
-            gain=std::pow(10.0f,((over>0?-over*(1-1/kRatio):0.0f)+kMakeupDb)/20);
+            envelope_=level>envelope_?p.attack*envelope_+(1-p.attack)*level:p.release*envelope_+(1-p.release)*level;
+            const float over=20*std::log10(envelope_+1e-9f)-p.threshold;
+            // 6 dB soft knee avoids an abrupt change in gain around normal speech levels.
+            const float reduction=over<=-3?0:over>=3?over*(1-1/p.ratio):(over+3)*(over+3)/12*(1-1/p.ratio);
+            gain=std::pow(10.0f,(p.makeup-reduction)/20);
         }
         for(unsigned c=0;c<channels;++c){
             const float x=block[c][i];
