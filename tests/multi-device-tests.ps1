@@ -41,6 +41,7 @@ try{
     $helper=$helper.Replace('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture',$registry+'\Capture')
     $helper=$helper.Replace('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MicFilter',$registry+'\Uninstall')
     $helper=$helper.Replace('HKLM:\SOFTWARE\Classes\',$registry+'\Classes\')
+    $helper=$helper.Replace('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run',$registry+'\Startup')
     $helper=$helper.Replace('[Microsoft.Win32.RegistryHive]::LocalMachine','[Microsoft.Win32.RegistryHive]::CurrentUser')
     $helper+=@'
 
@@ -76,6 +77,7 @@ function New-FixtureShell {
     New-ItemProperty -LiteralPath ($registry+'\Capture\'+$first+'\FxProperties') -Name $discoverySlot -Value $discoveryProxy -Force | Out-Null
     New-ItemProperty -LiteralPath ($registry+'\Capture\'+$second+'\FxProperties') -Name $associationSlot -Value 'test-driver-association' -Force | Out-Null
     Run-Fixture Install $first
+    Assert ([BitConverter]::ToInt32([IO.File]::ReadAllBytes((Join-Path $data 'MicFilter\options.bin')),8) -eq 0) 'A first installation did not default to Natural.'
     # A 0.5 backup must migrate without making MicFilter its own original effect.
     $legacy=@(Read-InstallationBackups $backup)[0]
     [IO.File]::WriteAllText($backup,($legacy | ConvertTo-Json),$utf8)
@@ -135,7 +137,11 @@ try {
     Run-Fixture Remove $second
     Assert (-not(Slot $second) -and -not(Test-Path -LiteralPath $class) -and -not(Test-Path -LiteralPath $backup)) 'Last-input removal left its registration.'
     Run-Fixture Install $first;Run-Fixture Install $second
+    $previousStartupKey=$machineRunKeyPath;$machineRunKeyPath=$registry+'\Startup'
+    try{Register-MicFilterStartup (Join-Path $program 'MicFilter\MicFilter.exe')}finally{$machineRunKeyPath=$previousStartupKey}
+    Assert ((Get-Item -LiteralPath ($registry+'\Startup')).GetValue('MicFilter') -eq ('"'+(Join-Path $program 'MicFilter\MicFilter.exe')+'"')) 'The automatic startup command is incorrect.'
     Run-Fixture Uninstall ''
+    Assert (-not(Get-ItemProperty -LiteralPath ($registry+'\Startup') -Name 'MicFilter' -ErrorAction SilentlyContinue)) 'Uninstall left its automatic startup entry.'
     Assert (-not(Slot $first) -and -not(Slot $second) -and (Slot $third) -eq $other) 'Uninstall did not restore all inputs or changed an unrelated app.'
     Assert (-not(Test-Path -LiteralPath $class) -and -not(Test-Path -LiteralPath (Join-Path $program 'MicFilter'))) 'Uninstall left application registration/files.'
     foreach($endpoint in @($first,$second,$third)){Assert ((Get-Item -LiteralPath ($registry+'\Capture\'+$endpoint+'\FxProperties')).GetValue('unrelated') -eq 'kept') 'An unrelated property was changed.'}

@@ -96,6 +96,7 @@ try {
             $link=Join-Path $links 'Wavo Filter.lnk';if((Test-Path -LiteralPath $link) -and $shell.CreateShortcut($link).TargetPath -like ($legacyProgramDir+'\*')){Remove-Item -LiteralPath $link -Force}
         }
         foreach($name in @('MicFilter','WavoFilter')){Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name $name -ErrorAction SilentlyContinue}
+        Remove-ItemProperty -LiteralPath $machineRunKeyPath -Name 'MicFilter' -ErrorAction SilentlyContinue
         $step='Delete files'
         $pending=0;$leftovers=@()
         foreach($directory in @($programDir,$legacyProgramDir,(Join-Path $env:ProgramData 'MicFilter'),(Join-Path $env:ProgramData 'WavoFilter'))){
@@ -138,7 +139,6 @@ try {
         if(Test-Path -LiteralPath $stateFile){$stream=[IO.File]::Open($stateFile,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::ReadWrite);try{$stream.Position=8;$stream.Write([BitConverter]::GetBytes([int]0),0,4)}finally{$stream.Dispose()}}
         if(Test-Path -LiteralPath $classPath){Remove-Item -LiteralPath $classPath -Recurse -Force}
         if(Test-Path -LiteralPath $apoPath){Remove-Item -LiteralPath $apoPath -Recurse -Force}
-        Remove-ItemProperty -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'MicFilter' -ErrorAction SilentlyContinue
         if(Test-Path -LiteralPath $configPath){Remove-Item -LiteralPath $configPath -Recurse -Force}
         Remove-Item -LiteralPath $backupPath -Force
         Write-InstallerLog 'Effect removed; previous configuration restored.'

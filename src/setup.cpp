@@ -165,19 +165,6 @@ std::vector<size_t> chooseMicrophones(const std::vector<Device>& devices){
         std::wcout<<L"\n";
     }
 }
-int chooseVoice(){
-    colored(kWhite,L"\n  Voice sound (optional)\n\n");
-    detail(L"    Enter / 0. Keep my current choice (Natural on a first install)\n    1. Natural - your voice as captured\n    2. Clear - gentle clarity for everyday calls\n    3. Broadcast - warm speech, even volume\n    4. Deep - body and clarity for lower voices\n");
-    for(;;){
-        std::wcout<<L"\n  Your choice: "<<std::flush;std::wstring answer;
-        if(!std::getline(std::wcin,answer))throw std::runtime_error("Cancelled. Nothing was changed.");
-        const auto begin=answer.find_first_not_of(L" \t");if(begin==std::wstring::npos)return -1;
-        answer=answer.substr(begin,answer.find_last_not_of(L" \t")-begin+1);
-        if(answer==L"0")return -1;
-        if(answer.size()==1&&answer[0]>=L'1'&&answer[0]<=L'4')return answer[0]-L'1';
-        colored(kYellow,L"  Press Enter to keep your choice, or type a number from 1 to 4.\n");
-    }
-}
 }
 int wmain(int argc,wchar_t** argv){
     SetEnvironmentVariableW(L"PSModulePath",nullptr);
@@ -219,9 +206,9 @@ int wmain(int argc,wchar_t** argv){
             std::wcout<<L"PASS package: 9 resources, EXE/DLL/icons, persistent multi-input checklist; no microphone changes.\n";result=0;
             if(testConsole){
                 const auto choices=chooseMicrophones({{L"",L"Desktop microphone",L"",L"Ready to install",true,false},{L"",L"Headset microphone",L"",L"Ready to install",true,false},{L"",L"Other microphone",L"",L"Uses another audio effect",false,false}});
-                const auto voice=chooseVoice();std::wcout<<L"TEST console selection=";
+                std::wcout<<L"TEST console selection=";
                 for(size_t i=0;i<choices.size();++i){if(i)std::wcout<<L",";std::wcout<<choices[i]+1;}
-                std::wcout<<L" voice="<<voice<<L"\n";
+                std::wcout<<L" voice=default\n";
             }
         }else{
             if(!list){
@@ -246,7 +233,7 @@ int wmain(int argc,wchar_t** argv){
                     detail(L"  Less background noise. Nothing is recorded or uploaded.\n\n");
                     if(devices.empty())throw std::runtime_error("No microphone found. Connect one, enable it in Windows Settings and run setup again.");
                     std::vector<size_t> choices;
-                    if(requested.empty()){choices=chooseMicrophones(devices);if(preset<0)preset=chooseVoice();}
+                    if(requested.empty())choices=chooseMicrophones(devices);
                     else for(const auto& guid:requested){bool found=false;for(size_t i=0;i<devices.size();++i)if(_wcsicmp(devices[i].guid.c_str(),guid.c_str())==0){choices.push_back(i);found=true;break;}if(!found)throw std::runtime_error("A selected microphone is no longer connected. Reconnect it and run setup again.");}
                     std::wstring endpointList;
                     for(auto choice:choices){

@@ -19,12 +19,16 @@ function Test-ConsoleFlow([string]$Answers,[string]$Expected){
     $code=$console.ExitCode;$console.Dispose()
     if($code -ne 0 -or $out.Result -notmatch [regex]::Escape($Expected)){throw ('Console flow failed: '+$out.Result+$errors.Result)}
 }
-Test-ConsoleFlow "1`n2`n`n4`n" 'TEST console selection=1,2 voice=3'
-Test-ConsoleFlow "A`n1`n`n`n" 'TEST console selection=2 voice=-1'
-Test-ConsoleFlow "1`n2,3`n`n2`n" 'TEST console selection=1 voice=1'
+Test-ConsoleFlow "1`n2`n`n" 'TEST console selection=1,2 voice=default'
+Test-ConsoleFlow "A`n1`n`n" 'TEST console selection=2 voice=default'
+Test-ConsoleFlow "1`n2,3`n`n" 'TEST console selection=1 voice=default'
+$trayTest=Start-Process -FilePath (Join-Path $DistributionDirectory 'MicFilter.exe') -ArgumentList '--self-test-menu' -WindowStyle Hidden -PassThru
+$null=$trayTest.Handle
+if(-not $trayTest.WaitForExit(10000)){$trayTest.Kill();throw 'The tray menu test timed out.'}
+$trayTest.Refresh();if($trayTest.ExitCode -ne 0){throw 'The compact tray menu test failed.'}
 foreach($name in @('setup-install.ps1','install.ps1','installer-registry.ps1')){
     $tokens=$null;$errors=$null;[Management.Automation.Language.Parser]::ParseFile((Join-Path $DistributionDirectory $name),[ref]$tokens,[ref]$errors) | Out-Null
     if($errors.Count){throw ($errors.Message -join '; ')}
     $bytes=[IO.File]::ReadAllBytes((Join-Path $DistributionDirectory $name));if($bytes[0] -ne 239 -or $bytes[1] -ne 187 -or $bytes[2] -ne 191){throw ('UTF-8 BOM missing: '+$name)}
 }
-Write-Host 'PASS package: embedded resources/icons, isolated extraction, persistent multi-input console flow and voice choice, PS5.1 scripts.'
+Write-Host 'PASS package: embedded resources/icons, isolated extraction, persistent multi-input console flow without voice prompt, PS5.1 scripts.'

@@ -2,11 +2,13 @@
 
 ## 0.6.0 — 2026-10-08
 
-- Simple colored console setup with persistent microphone checks, number-based multiple selection, optional voice sound and plain progress/results. Update existing inputs or add more without uninstalling first; no graphical wizard or added UI runtime.
+- Simple colored console setup with persistent microphone checks, number-based multiple selection and plain progress/results. Fresh installs default to Natural without a voice prompt; updates keep the saved profile. Setup explains single-click on/off and later voice changes from the tray.
 - Independent restore backups for multiple inputs, including migration of the previous single-input backup. Removal keeps other microphones registered; uninstall restores disconnected inputs too. Batch setup checks every selected input and restores the batch if capture fails.
 - Embedded microphone icon in the application and installer, with explicit icon references for Settings > Apps and shortcuts. Lossless PNG compression keeps all seven sizes without bloating the executables.
 - Gentler Clear and Broadcast profiles: less treble emphasis, moderate Broadcast compression with a soft knee and lower makeup gain. New Deep profile retains low fundamentals, reduces low-mid mud and adds restrained consonant presence without changing pitch.
 - Per-microphone activity counters and tray input selection prevent activity on one input from confirming another. Shared voice and enable/disable controls retain the 64-byte ABI.
+- Compact tray submenus for voice, silence and original sound. Microphone activity checks capture/filtering asynchronously and explains results in plain language. Diagnostics, log, removal, uninstall and startup-toggle commands are no longer shown in the tray; uninstall remains in Windows Installed apps.
+- The icon starts with Windows automatically. Startup and repeated launches preserve enable/disable state, fixing a second application launch unexpectedly toggling the filter. APO-reported version now matches the 0.6 registration.
 - Other audio applications and manufacturer processing effects remain untouched and appear unavailable in setup. Windows' discovery-only proxy and driver association metadata no longer cause false conflicts; capture and per-input processing are still checked. Physical compatibility and subjective voice quality require capture/listening checks.
 
 ## 0.5.3 — 2026-10-01

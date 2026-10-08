@@ -266,7 +266,8 @@ void apoTests(IPropertyStore* endpoint=nullptr){
     IAudioProcessingObject* apo=nullptr;require(SUCCEEDED(factory->CreateInstance(nullptr,__uuidof(IAudioProcessingObject),reinterpret_cast<void**>(&apo))),"APO creation failed");factory->Release();
     APOInitSystemEffects2 context{};context.APOInit.cbSize=sizeof(context);context.APOInit.clsid=micfilter::kClsid;context.pAPOEndpointProperties=endpoint;
     require(apo->Initialize(endpoint?sizeof(context):0,endpoint?reinterpret_cast<BYTE*>(&context):nullptr)==S_OK,"APO initialize");require(apo->Initialize(0,nullptr)==APOERR_ALREADY_INITIALIZED,"double initialize accepted");
-    APO_REG_PROPERTIES* properties=nullptr;require(apo->GetRegistrationProperties(&properties)==S_OK,"registration properties");require(properties->clsid==micfilter::kClsid&&properties->u32NumAPOInterfaces==1&&properties->iidAPOInterfaceList[0]==__uuidof(IAudioProcessingObject),"registration incorrect");CoTaskMemFree(properties);
+    APO_REG_PROPERTIES* properties=nullptr;require(apo->GetRegistrationProperties(&properties)==S_OK,"registration properties");require(properties->clsid==micfilter::kClsid&&properties->u32NumAPOInterfaces==1&&properties->iidAPOInterfaceList[0]==__uuidof(IAudioProcessingObject),"registration incorrect");
+    require(properties->u32MajorVersion==0&&properties->u32MinorVersion==6,"APO version differs from installer registration");CoTaskMemFree(properties);
     IAudioProcessingObjectConfiguration* config=nullptr;IAudioProcessingObjectRT* rt=nullptr;IAudioSystemEffects* effects=nullptr;
     require(SUCCEEDED(apo->QueryInterface(__uuidof(IAudioProcessingObjectConfiguration),reinterpret_cast<void**>(&config))),"configuration interface");
     require(SUCCEEDED(apo->QueryInterface(__uuidof(IAudioProcessingObjectRT),reinterpret_cast<void**>(&rt))),"realtime interface");

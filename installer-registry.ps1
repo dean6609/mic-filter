@@ -6,6 +6,12 @@ $legacyClsids=@('{54F530A1-D045-4C70-8999-11CF13E0DDAF}','{6C78EB4F-8AE4-4461-BE
 $effectSlot='{d04e05a6-594b-4fb6-a80d-01af5eed7d1d},2'
 $captureRoot='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture'
 $uninstallKeyPath='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\MicFilter'
+$machineRunKeyPath='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+
+function Register-MicFilterStartup([string]$Executable) {
+    New-Item -Path $machineRunKeyPath -Force | Out-Null
+    New-ItemProperty -LiteralPath $machineRunKeyPath -Name 'MicFilter' -Value ('"'+$Executable+'"') -PropertyType String -Force | Out-Null
+}
 
 # Version 2 keeps one original backup per endpoint. Read version 1 without losing its restore data.
 function Read-InstallationBackups([string]$Path) {

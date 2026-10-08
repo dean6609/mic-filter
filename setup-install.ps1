@@ -15,6 +15,7 @@ $classPath='HKLM:\SOFTWARE\Classes\CLSID\'+$ownClsid+'\InprocServer32'
 $effectsKey=$null;$changed=$false;$complete=$false;$exitCode=1;$previousVersionLoaded=$false
 $oldControls=$null;$oldDll=$null;$oldConfig=$null;$oldBackup=$null;$rollbackComplete=$true
 $logPath=$null;$createdShortcuts=@()
+$oldStartup=$null;$startupChanged=$false
 # Console output is for people: short steps and a plain summary. Technical detail goes to the log only.
 function Write-Log([string]$Message){if($logPath){[IO.File]::AppendAllText($logPath,[DateTime]::Now.ToString('o')+' '+$Message+[Environment]::NewLine,[Text.UTF8Encoding]::new($false))}}
 function Write-Busy([string]$Text,[int]$Tick=0){Write-Host ("`r  "+@('|','/','-','\')[$Tick%4]+'   '+$Text) -NoNewline -ForegroundColor DarkGray}
@@ -58,6 +59,7 @@ try {
     if(Test-Path -LiteralPath $configPath){$oldConfig=Get-ItemProperty -LiteralPath $configPath}
     if(Test-Path -LiteralPath $classPath){$oldDll=(Get-Item -LiteralPath $classPath).GetValue('')}
     $optionsPath=Join-Path $dataDir 'options.bin'
+    if(Test-Path -LiteralPath $machineRunKeyPath){$oldStartup=(Get-Item -LiteralPath $machineRunKeyPath).GetValue('MicFilter')}
     $oldOptions=if(Test-Path -LiteralPath $optionsPath){[IO.File]::ReadAllBytes($optionsPath)}else{$null}
     foreach($name in @('MicFilter.exe','install.ps1','installer-registry.ps1')){if(Test-Path -LiteralPath (Join-Path $programDir $name)){Copy-Item -LiteralPath (Join-Path $programDir $name) -Destination (Join-Path $source ('previous-'+$name))}}
     if(Get-Process -Name MicFilter,WavoFilter -ErrorAction SilentlyContinue){
@@ -117,6 +119,8 @@ try {
     foreach($entry in $entries.GetEnumerator()){New-ItemProperty -LiteralPath $uninstallKeyPath -Name $entry.Key -Value $entry.Value -PropertyType String -Force | Out-Null}
     foreach($entry in @{NoModify=1;NoRepair=1;EstimatedSize=$sizeKb}.GetEnumerator()){New-ItemProperty -LiteralPath $uninstallKeyPath -Name $entry.Key -Value $entry.Value -PropertyType DWord -Force | Out-Null}
     Write-Step 'Added to the desktop, Start menu and Settings > Apps'
+    $startupChanged=$true;Register-MicFilterStartup $exe
+    Write-Step 'MicFilter will show its icon when Windows starts'
     $complete=$true;$exitCode=0
     try{
         # Housekeeping after a confirmed install; failures here never roll back the filter.
@@ -142,8 +146,11 @@ try {
     else{Write-Note 'Installed. Reconnect the microphone or restart Windows to start filtering.' 'Yellow'}
     if([BitConverter]::ToInt32($finalControls,8)){Write-Note 'Open MicFilter from the desktop or Start menu to change voice options.'}
     else{Write-Note 'The filter is off, as you left it. Open MicFilter and click its icon to turn it on.'}
+    Write-Note 'Natural is the default voice sound. Your saved voice sound is kept on updates.'
+    Write-Note 'Right-click the MicFilter icon to change Voice sound later.'
+    Write-Note 'Click the icon once to turn noise reduction off or on.'
     $summary=if($previousVersionLoaded){'MicFilter is installed. Restart Windows to start using the new version.'}elseif($pendingEndpoints.Count){'MicFilter is installed and microphone audio works. Reconnect your selected microphones or restart Windows to finish enabling filtering.'}else{'All set! Your selected microphones are ready.'}
-    $summary+=[Environment]::NewLine+[Environment]::NewLine+'Open MicFilter from the desktop or Start menu to change your voice sound. The same controls apply to all installed microphones.'
+    $summary+=[Environment]::NewLine+[Environment]::NewLine+'The icon shows when Windows starts. Click it once to turn noise reduction off or on; right-click to change Voice sound. Natural is the default; updates keep your saved choice.'
     if(-not [BitConverter]::ToInt32($finalControls,8)){$summary+=[Environment]::NewLine+'The filter is off, as you left it.'}
     if($SummaryPath){[IO.File]::WriteAllText($SummaryPath,$summary,[Text.UTF8Encoding]::new($false))}
     Write-Note ('Details: '+$logPath) 'DarkGray'
@@ -179,6 +186,10 @@ try {
     if($SummaryPath){[IO.File]::WriteAllText($SummaryPath,$failureMessage+[Environment]::NewLine+[Environment]::NewLine+'Setup stopped. Details: '+$logPath,[Text.UTF8Encoding]::new($false))}
     if($logPath){Write-Note ('Details: '+$logPath) 'DarkGray'}
 }finally{
+    if(-not $complete -and $startupChanged){
+        if($oldStartup){New-ItemProperty -LiteralPath $machineRunKeyPath -Name 'MicFilter' -Value $oldStartup -PropertyType String -Force | Out-Null}
+        else{Remove-ItemProperty -LiteralPath $machineRunKeyPath -Name 'MicFilter' -ErrorAction SilentlyContinue}
+    }
     if(-not $complete -and $rollbackComplete){foreach($name in @('MicFilter.exe','install.ps1','installer-registry.ps1')){if(Test-Path -LiteralPath (Join-Path $source ('previous-'+$name))){Copy-Item -LiteralPath (Join-Path $source ('previous-'+$name)) -Destination (Join-Path $programDir $name) -Force}}}
     if(-not $complete -and $oldControls -and (Test-Path -LiteralPath $statePath)){Write-Controls $oldControls}
     if($effectsKey){$effectsKey.Dispose()}
