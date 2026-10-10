@@ -40,10 +40,13 @@ Work on a branch from current `main`, run the isolated build and package checks,
 ## Working rules
 
 - Keep user-facing text and maintained documentation in English.
-- Preserve bit-exact bypass and stored enable/disable behavior.
+- Preserve bit-exact bypass and stored enable/disable behavior. Opening the tray never enables the filter; exiting disables it.
+- Keep the 64-byte shared-state ABI compatible across upgrades.
+- Register only `IAudioProcessingObject` in `NumAPOInterfaces` and keep proper COM aggregation.
 - Allocate models, resamplers and buffers before real-time processing. Do not add blocking work, file access or heap allocation to the callback.
 - Do not replace unrelated manufacturer effects or change Windows security policy.
-- Keep third-party sources and license notices intact.
+- Keep third-party sources and license notices intact; `SOURCE.md` in each vendor folder records what is included.
+- Do not commit local logs, recordings, diagnostic scripts or device identifiers.
 - Tests must use private state, never the installed microphone's shared controls.
 - Update the installer, payload list and tests together when changing runtime filenames.
 

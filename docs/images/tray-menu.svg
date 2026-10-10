@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="340" viewBox="0 0 1120 340" role="img" aria-labelledby="title description">
+  <title id="title">MicFilter tray menu</title>
+  <desc id="description">Right-clicking the MicFilter icon shows the status, Voice sound, Silence between words, Original microphone sound, Microphone activity, Add or update microphones, and Exit and turn off noise reduction. The Voice sound submenu offers Natural, Clear, Broadcast and Deep.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0f172a"/><stop offset="1" stop-color="#172c3c"/></linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity=".35"/></filter>
+  </defs>
+  <rect width="1120" height="340" rx="24" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="1119" height="339" rx="23.5" fill="none" stroke="#5eead4" stroke-opacity=".14"/>
+
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="14">
+    <!-- Main menu -->
+    <g transform="translate(225 30)">
+      <rect width="300" height="277" rx="10" fill="#1e293b" stroke="#475569" stroke-opacity=".7" filter="url(#shadow)"/>
+      <text x="40" y="28" fill="#94a3b8">Reducing noise now</text>
+      <path d="M12 44.5H288" stroke="#475569"/>
+      <rect x="5" y="49" width="290" height="34" rx="6" fill="#334155"/>
+      <g fill="#f1f5f9">
+        <text x="40" y="71">Voice sound</text>
+        <text x="40" y="105">Silence between words</text>
+        <text x="40" y="139">Original microphone sound</text>
+        <text x="40" y="182">Microphone activity</text>
+        <text x="40" y="216">Add or update microphones...</text>
+        <text x="40" y="259">Exit and turn off noise reduction</text>
+      </g>
+      <g fill="none" stroke="#cbd5e1" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M274 61l4 5-4 5M274 95l4 5-4 5M274 129l4 5-4 5M274 172l4 5-4 5"/>
+      </g>
+      <path d="M12 155.5H288M12 232.5H288" stroke="#475569"/>
+    </g>
+
+    <!-- Voice sound submenu -->
+    <g transform="translate(531 73)">
+      <rect width="340" height="148" rx="10" fill="#1e293b" stroke="#475569" stroke-opacity=".7" filter="url(#shadow)"/>
+      <path d="M15 27l4 4 8-9" fill="none" stroke="#5eead4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <g fill="#f1f5f9">
+        <text x="40" y="29">Natural (as captured)</text>
+        <text x="40" y="63">Clear (gentle clarity)</text>
+        <text x="40" y="97">Broadcast (even volume)</text>
+        <text x="40" y="131">Deep (body and clarity for lower voices)</text>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="300" viewBox="0 0 1120 300" role="img" aria-labelledby="title description">
+  <title id="title">How MicFilter works</title>
+  <desc id="description">Your microphone picks up your voice plus background noise. MicFilter removes the noise on your PC. Your apps receive just your voice.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0f172a"/><stop offset="1" stop-color="#172c3c"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#5eead4" stop-opacity=".28"/><stop offset="1" stop-color="#5eead4" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1120" height="300" rx="24" fill="url(#bg)"/>
+  <rect x=".5" y=".5" width="1119" height="299" rx="23.5" fill="none" stroke="#5eead4" stroke-opacity=".14"/>
+  <g fill="#ffffff" fill-opacity=".03" stroke="#94a3b8" stroke-opacity=".16">
+    <rect x="30" y="30" width="330" height="240" rx="18"/>
+    <rect x="395" y="30" width="330" height="240" rx="18"/>
+    <rect x="760" y="30" width="330" height="240" rx="18"/>
+  </g>
+  <g fill="none" stroke="#94a3b8" stroke-opacity=".7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M374 112l7 8-7 8"/>
+    <path d="M739 112l7 8-7 8"/>
+  </g>
+  <g stroke="#94a3b8" stroke-width="4" stroke-linecap="round" opacity=".75">
+      <path d="M60.0 108.0V132.0"/>
+      <path d="M67.5 110.0V130.0"/>
+      <path d="M75.0 101.3V138.7"/>
+      <path d="M82.5 107.9V132.1"/>
+      <path d="M90.0 98.3V141.7"/>
+      <path d="M97.5 95.5V144.5"/>
+      <path d="M105.0 95.4V144.6"/>
+      <path d="M112.5 83.1V156.9"/>
+      <path d="M120.0 83.0V157.0"/>
+      <path d="M127.5 78.8V161.2"/>
+      <path d="M135.0 77.0V163.0"/>
+      <path d="M142.5 88.6V151.4"/>
+      <path d="M150.0 78.3V161.7"/>
+      <path d="M157.5 85.1V154.9"/>
+      <path d="M165.0 96.1V143.9"/>
+      <path d="M172.5 102.1V137.9"/>
+      <path d="M180.0 97.7V142.3"/>
+      <path d="M187.5 95.4V144.6"/>
+      <path d="M195.0 102.3V137.7"/>
+      <path d="M202.5 105.3V134.7"/>
+      <path d="M210.0 95.2V144.8"/>
+      <path d="M217.5 107.3V132.7"/>
+      <path d="M225.0 92.5V147.5"/>
+      <path d="M232.5 93.9V146.1"/>
+      <path d="M240.0 97.2V142.8"/>
+      <path d="M247.5 85.2V154.8"/>
+      <path d="M255.0 86.8V153.2"/>
+      <path d="M262.5 70.7V169.3"/>
+      <path d="M270.0 88.1V151.9"/>
+      <path d="M277.5 82.9V157.1"/>
+      <path d="M285.0 88.5V151.5"/>
+      <path d="M292.5 97.8V142.2"/>
+      <path d="M300.0 98.5V141.5"/>
+      <path d="M307.5 109.7V130.3"/>
+      <path d="M315.0 110.9V129.1"/>
+      <path d="M322.5 109.7V130.3"/>
+      <path d="M330.0 102.3V137.7"/>
+  </g>
+  <circle cx="560" cy="120" r="70" fill="url(#glow)"/>
+  <circle cx="560" cy="120" r="44" fill="#0f172a" stroke="#5eead4" stroke-opacity=".5" stroke-width="2"/>
+  <g stroke="#5eead4" stroke-width="4.5" stroke-linecap="round" fill="none" transform="translate(560 120) scale(.42) translate(-106 -133)">
+    <rect x="79" y="63" width="53" height="95" rx="26"/>
+    <path d="M62 126v7a44 44 0 0 0 88 0v-7M106 177v26M87 203h38"/>
+  </g>
+  <g stroke="#5eead4" stroke-width="4" stroke-linecap="round">
+      <path d="M790.0 118.2V121.8"/>
+      <path d="M797.5 117.4V122.6"/>
+      <path d="M805.0 116.7V123.3"/>
+      <path d="M812.5 114.0V126.0"/>
+      <path d="M820.0 111.8V128.2"/>
+      <path d="M827.5 106.4V133.6"/>
+      <path d="M835.0 101.4V138.6"/>
+      <path d="M842.5 96.3V143.7"/>
+      <path d="M850.0 88.6V151.4"/>
+      <path d="M857.5 90.8V149.2"/>
+      <path d="M865.0 83.1V156.9"/>
+      <path d="M872.5 95.0V145.0"/>
+      <path d="M880.0 90.1V149.9"/>
+      <path d="M887.5 103.3V136.7"/>
+      <path d="M895.0 103.0V137.0"/>
+      <path d="M902.5 110.7V129.3"/>
+      <path d="M910.0 112.7V127.3"/>
+      <path d="M917.5 115.6V124.4"/>
+      <path d="M925.0 116.6V123.4"/>
+      <path d="M932.5 116.6V123.4"/>
+      <path d="M940.0 115.9V124.1"/>
+      <path d="M947.5 113.0V127.0"/>
+      <path d="M955.0 111.2V128.8"/>
+      <path d="M962.5 103.5V136.5"/>
+      <path d="M970.0 104.5V135.5"/>
+      <path d="M977.5 92.0V148.0"/>
+      <path d="M985.0 96.8V143.2"/>
+      <path d="M992.5 88.7V151.3"/>
+      <path d="M1000.0 96.0V144.0"/>
+      <path d="M1007.5 97.2V142.8"/>
+      <path d="M1015.0 103.7V136.3"/>
+      <path d="M1022.5 108.8V131.2"/>
+      <path d="M1030.0 112.3V127.7"/>
+      <path d="M1037.5 115.7V124.3"/>
+      <path d="M1045.0 116.9V123.1"/>
+      <path d="M1052.5 118.0V122.0"/>
+      <path d="M1060.0 118.2V121.8"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif" text-anchor="middle">
+    <g font-size="11" letter-spacing="2.2" fill="#94a3b8">
+      <text x="195" y="200">YOUR MICROPHONE</text>
+      <text x="560" y="200">MICFILTER</text>
+      <text x="925" y="200">YOUR APPS</text>
+    </g>
+    <g font-size="21" font-weight="600" fill="#f8fafc">
+      <text x="195" y="230">Voice and noise</text>
+      <text x="560" y="230">Noise removed on your PC</text>
+      <text x="925" y="230">Just your voice</text>
+    </g>
+    <g font-size="14" fill="#cbd5e1">
+      <text x="195" y="254">Fans, keyboards, the street</text>
+      <text x="560" y="254">Offline, nothing is recorded</text>
+      <text x="925" y="254">Calls, recordings, any app</text>
+    </g>
+  </g>
+</svg>

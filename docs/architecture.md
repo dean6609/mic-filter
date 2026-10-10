@@ -87,6 +87,6 @@ The producer ID and recent monotonic tick distinguish current callbacks from old
 - Bundled RNNoise: `70f1d256acd4b34a572f999a05c87bf00b67730d`.
 - SpeexDSP 1.2.1: `1b28a0f61bc31162979e1f26f3981fc3637095c8`, standalone float resampler with `RANDOM_PREFIX=micfilter`.
 - APO interface declarations are written for this project in `src/apo_sdk.h` from Microsoft's public API reference; no Windows SDK headers are redistributed. Compile-time checks pin the struct layouts.
-- `vendor/rnnoise` is the upstream RNNoise tree at the revision above. The unused alternative model `rnnoise_data_little.c` is omitted.
+- `vendor/rnnoise` is the unmodified inference subset of RNNoise at the revision above; `vendor/rnnoise/SOURCE.md` lists what is kept. Training scripts, build-system files and the unused alternative model `rnnoise_data_little.c` are omitted.
 
 The network and weights are unchanged. No personal training or automatic model download is implemented. Engine updates should pin a reviewed revision and repeat equivalence, streaming and physical voice checks.

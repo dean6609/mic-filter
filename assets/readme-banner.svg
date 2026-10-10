@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="260" viewBox="0 0 1120 260" role="img" aria-labelledby="title description">
   <title id="title">MicFilter</title>
-  <desc id="description">Native microphone noise suppression for Windows.</desc>
+  <desc id="description">Less background noise in calls and recordings.</desc>
   <defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0f172a"/><stop offset="1" stop-color="#172c3c"/></linearGradient></defs>
   <rect width="1120" height="260" rx="24" fill="url(#bg)"/>
   <g stroke="#5eead4" stroke-width="9" stroke-linecap="round" fill="none">
@@ -8,8 +8,8 @@
     <path d="M62 126v7a44 44 0 0 0 88 0v-7M106 177v26M87 203h38"/>
   </g>
   <text x="197" y="125" font-family="Segoe UI,Arial,sans-serif" font-size="65" font-weight="700" fill="#f8fafc">MicFilter</text>
-  <text x="200" y="169" font-family="Segoe UI,Arial,sans-serif" font-size="24" fill="#cbd5e1">Native microphone noise suppression for Windows.</text>
-  <text x="201" y="208" font-family="Segoe UI,Arial,sans-serif" font-size="16" letter-spacing="2" fill="#5eead4">RNNOISE  /  C++  /  ONE-FILE INSTALLER</text>
+  <text x="200" y="169" font-family="Segoe UI,Arial,sans-serif" font-size="24" fill="#cbd5e1">Less background noise in calls and recordings.</text>
+  <text x="201" y="208" font-family="Segoe UI,Arial,sans-serif" font-size="16" letter-spacing="2" fill="#5eead4">ONE INSTALLER  ·  WORKS OFFLINE  ·  ONE OR MORE MICROPHONES</text>
   <g stroke="#5eead4" stroke-width="7" stroke-linecap="round" opacity=".45">
     <path d="M872 113v34M897 91v78M922 62v136M947 82v96M972 105v50M997 117v26M1022 97v66"/>
   </g>
