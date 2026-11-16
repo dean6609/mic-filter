@@ -1,0 +1,32 @@
+name: Release downloads
+
+# Runs once when a release is published: builds the Linux and macOS downloads and attaches
+# them to that release. MicFilter-Setup.exe is still built and checked on a real Windows
+# microphone before it is uploaded by hand (see CONTRIBUTING.md).
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-22.04 }
+          - { name: macOS, os: macos-latest }
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build, test and package
+        run: ./build.sh --test --package
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/MicFilter-*.tar.gz dist/MicFilter-*.zip --clobber --repo "$GITHUB_REPOSITORY"
+        shell: bash -O nullglob -e {0}

@@ -1,4 +1,4 @@
-MicFilter 0.6.0 — Native microphone noise suppression for Windows
+MicFilter 0.7.0 — Native microphone noise suppression for Windows
 
 INSTALL
 Double-click MicFilter-Setup.exe and accept the Windows administrator prompt.

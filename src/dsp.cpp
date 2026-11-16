@@ -1,22 +1,26 @@
 #include "dsp.h"
+#include "platform.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
 namespace micfilter {
 Processor::~Processor() {
-    for(auto* s:states_) if(s) { VirtualUnlock(s,rnnoise_get_size()); rnnoise_destroy(s); }
-    VirtualUnlock(this,sizeof(*this));
+    for(auto* s:states_) if(s) { unlockMemory(s,rnnoise_get_size()); rnnoise_destroy(s); }
+    unlockMemory(this,sizeof(*this));
 }
 bool Processor::initialize(unsigned channels) {
+    for(auto*& s:states_) { if(s) { unlockMemory(s,rnnoise_get_size()); rnnoise_destroy(s); } s=nullptr; }
+    // A failed initialization leaves no channels, so process() can never reach a missing model.
+    channels_=0;
     if(channels<1 || channels>8) return false;
-    for(auto*& s:states_) { if(s) { VirtualUnlock(s,rnnoise_get_size()); rnnoise_destroy(s); } s=nullptr; }
-    channels_=channels;
-    for(unsigned c=0;c<channels_;++c) {
+    for(unsigned c=0;c<channels;++c) {
         states_[c]=rnnoise_create(nullptr);
         if(!states_[c]) return false;
-        VirtualLock(states_[c],rnnoise_get_size());
+        lockMemory(states_[c],rnnoise_get_size());
     }
-    VirtualLock(this,sizeof(*this));
+    channels_=channels;
+    lockMemory(this,sizeof(*this));
     // Warm the network and DSP tables on this non-real-time initialization path.
     std::array<float,480> zero{},warm{};
     for(unsigned c=0;c<channels_;++c) rnnoise_process_frame(states_[c],warm.data(),zero.data());
@@ -67,6 +71,7 @@ void Processor::process(const float* input,float* output,unsigned frames,bool si
         return;
     }
     if(!previouslyEnabled_) { reset(); previouslyEnabled_=true; }
+    const DenormalGuard guard;
     for(unsigned f=0;f<frames;++f) {
         // Read every channel before overwriting it; supports exact in-place audio buffers.
         for(unsigned c=0;c<channels_;++c) {

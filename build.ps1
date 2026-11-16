@@ -38,7 +38,7 @@ try{& (Join-Path $compilerFolder.FullName 'bin\windres.exe') '-i' 'app.rc' '-o' 
 if($LASTEXITCODE -ne 0){throw 'Could not compile APO'}
 & $cxx @common @cppFlags '-municode' '-mwindows' (Join-Path $root 'src\tray.cpp') $appResource '-lole32' '-luuid' '-lshell32' '-lpropsys' '-ladvapi32' '-lgdi32' '-luser32' '-o' (Join-Path $output 'MicFilter.exe')
 if($LASTEXITCODE -ne 0){throw 'Could not compile the tray application'}
-& $cxx @common @cppFlags (Join-Path $root 'tests\tests.cpp') (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\voice.cpp') (Join-Path $root 'src\rate_processor.cpp') @rnObjects '-lole32' '-luuid' '-o' (Join-Path $output 'MicFilterTests.exe')
+& $cxx @common @cppFlags (Join-Path $root 'tests\tests.cpp') (Join-Path $root 'tests\dsp_tests.cpp') ('-I'+(Join-Path $root 'tests')) (Join-Path $root 'src\dsp.cpp') (Join-Path $root 'src\voice.cpp') (Join-Path $root 'src\rate_processor.cpp') @rnObjects '-lole32' '-luuid' '-o' (Join-Path $output 'MicFilterTests.exe')
 if($LASTEXITCODE -ne 0){throw 'Could not compile tests'}
 foreach($scriptName in @('install.ps1','installer-registry.ps1')){
     $scriptText=Get-Content -LiteralPath (Join-Path $root $scriptName) -Raw -Encoding UTF8

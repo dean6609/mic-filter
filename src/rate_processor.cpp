@@ -1,4 +1,6 @@
 #include "rate_processor.h"
+#include "platform.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -6,8 +8,9 @@ namespace micfilter {
 RateProcessor::~RateProcessor(){if(to48_)speex_resampler_destroy(to48_);if(from48_)speex_resampler_destroy(from48_);}
 bool RateProcessor::initialize(unsigned channels,unsigned rate){
     if(channels<1||channels>8||rate<8000||rate>192000)return false;
-    if(to48_)speex_resampler_destroy(to48_);if(from48_)speex_resampler_destroy(from48_);
-    to48_=from48_=nullptr;channels_=channels;rate_=rate;
+    if(to48_)speex_resampler_destroy(to48_);
+    if(from48_)speex_resampler_destroy(from48_);
+    to48_=from48_=nullptr;channels_=0;rate_=rate;
     if(!core_.initialize(channels))return false;
     if(rate!=48000){
         int error=0;to48_=speex_resampler_init(channels,rate,48000,5,&error);
@@ -15,16 +18,16 @@ bool RateProcessor::initialize(unsigned channels,unsigned rate){
         from48_=speex_resampler_init(channels,48000,rate,5,&error);
         if(!from48_||error!=RESAMPLER_ERR_SUCCESS)return false;
     }
-    padding_=(rate+47999)/48000+2;reset();return true;
+    channels_=channels;padding_=(rate+47999)/48000+2;reset();return true;
 }
 void RateProcessor::reset() noexcept {
     core_.reset();if(to48_)speex_resampler_reset_mem(to48_);if(from48_)speex_resampler_reset_mem(from48_);
     head_=0;count_=padding_;queue_={};enabled_=false;healthy_=true;
 }
-LONG64 RateProcessor::latency() const noexcept {
+std::int64_t RateProcessor::latency() const noexcept {
     double seconds=0.030;
     if(to48_&&from48_)seconds+=static_cast<double>(speex_resampler_get_input_latency(to48_)+speex_resampler_get_output_latency(from48_)+padding_)/rate_;
-    return static_cast<LONG64>(std::ceil(seconds*10000000.0));
+    return static_cast<std::int64_t>(std::ceil(seconds*10000000.0));
 }
 void RateProcessor::process(const float* src,float* dst,unsigned frames,bool silent,const Settings& settings) noexcept {
     if(!channels_||!dst)return;
@@ -35,6 +38,7 @@ void RateProcessor::process(const float* src,float* dst,unsigned frames,bool sil
     }
     if(rate_==48000){core_.process(src,dst,frames,silent,settings);return;}
     if(!enabled_){reset();enabled_=true;}
+    const DenormalGuard guard;
     unsigned offset=0;
     while(offset<frames){
         const unsigned n=std::min(256u,frames-offset);

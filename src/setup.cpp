@@ -20,7 +20,7 @@
 #include "setup_selection.h"
 
 namespace {
-constexpr wchar_t kVersion[]=L"0.6.0";
+constexpr wchar_t kVersion[]=L"0.7.0";
 constexpr WORD kGreen=FOREGROUND_GREEN|FOREGROUND_INTENSITY;
 constexpr WORD kYellow=FOREGROUND_RED|FOREGROUND_GREEN|FOREGROUND_INTENSITY;
 constexpr WORD kRed=FOREGROUND_RED|FOREGROUND_INTENSITY,kGray=FOREGROUND_INTENSITY,kWhite=FOREGROUND_RED|FOREGROUND_GREEN|FOREGROUND_BLUE|FOREGROUND_INTENSITY;
@@ -45,6 +45,14 @@ void step(const wchar_t* mark,WORD color,const std::wstring& text){colored(color
 void ok(const std::wstring& text){step(L"  OK  ",kGreen,text);}
 void failed(const std::wstring& text){step(L"  X   ",kRed,text);}
 void detail(const std::wstring& text){colored(kGray,text);logLine(text);}
+// Framed title, the same look as the Linux/macOS terminal app.
+void banner(const std::wstring& title,const std::wstring& tagline){
+    constexpr WORD kTeal=FOREGROUND_GREEN|FOREGROUND_BLUE|FOREGROUND_INTENSITY;
+    const size_t width=std::max(title.size(),tagline.size())+4;const std::wstring edge(width,L'─');
+    colored(kTeal,L"\n  ┌"+edge+L"┐\n  │  ");colored(kWhite,title+std::wstring(width-2-title.size(),L' '));
+    colored(kTeal,L"│\n  │  ");colored(kGray,tagline+std::wstring(width-2-tagline.size(),L' '));
+    colored(kTeal,L"│\n  └"+edge+L"┘\n\n");logLine(title);
+}
 struct Payload {WORD id;const wchar_t* name;};
 constexpr Payload payloads[]={{101,L"MicFilter.exe"},{102,L"MicFilterAPO.dll"},{103,L"install.ps1"},{104,L"installer-registry.ps1"},{105,L"LICENSE"},{106,L"RNNOISE-LICENSE.txt"},{107,L"SPEEX-LICENSE.txt"},{108,L"setup-install.ps1"},{109,L"GETTING_STARTED.txt"}};
 struct Device {std::wstring id,name,guid,status;bool available=true,installed=false;};
@@ -230,7 +238,7 @@ int wmain(int argc,wchar_t** argv){
                 if(acquired!=WAIT_OBJECT_0&&acquired!=WAIT_ABANDONED){CloseHandle(installationMutex);installationMutex=nullptr;throw std::runtime_error("MicFilter setup is already running. Finish the other setup window and try again.");}
             }
             if(uninstall){
-                colored(kWhite,std::wstring(L"\n  MicFilter ")+kVersion+L" - uninstall\n\n");
+                banner(std::wstring(L"MicFilter ")+kVersion+L" - uninstall",L"Your microphones go back to how they were.");
                 staging=createStaging();ownsStaging=true;extract(staging);result=runScript(staging,L"install.ps1\" -Action Uninstall -Quiet -ShowResult");
                 if(result==0)ok(L"MicFilter was removed.");else failed(L"Uninstall did not complete. The message window explains why.");
             }else{
@@ -241,8 +249,7 @@ int wmain(int argc,wchar_t** argv){
                     result=0;
                 }
                 else{
-                    colored(kWhite,std::wstring(L"\n  MicFilter ")+kVersion+L"\n");
-                    detail(L"  Less background noise. Nothing is recorded or uploaded.\n\n");
+                    banner(std::wstring(L"MicFilter ")+kVersion,L"Less background noise. Nothing is recorded or uploaded.");
                     if(devices.empty())throw std::runtime_error("No microphone found. Connect one, enable it in Windows Settings and run setup again.");
                     std::vector<size_t> choices;
                     if(requested.empty())choices=chooseMicrophones(devices);

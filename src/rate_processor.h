@@ -1,5 +1,6 @@
 #pragma once
 #include "dsp.h"
+#include <cstdint>
 #include <speex_resampler.h>
 
 namespace micfilter {
@@ -21,7 +22,7 @@ public:
     bool initialize(unsigned channels,unsigned rate);
     void reset() noexcept;
     bool healthy() const noexcept {return healthy_;}
-    LONG64 latency() const noexcept;
+    std::int64_t latency() const noexcept; // 100 ns units
     void process(const float* input,float* output,unsigned frames,bool silent,const Settings& settings) noexcept;
 };
 }
