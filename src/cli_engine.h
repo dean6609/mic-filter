@@ -14,7 +14,7 @@ namespace micfilter::cli {
 // before audio starts; the callbacks never allocate, lock or touch files.
 class Engine {
     static constexpr ma_uint32 kRate=48000,kPeriod=480;
-    static constexpr ma_uint32 kRing=9600;      // 200 ms of room
+    static constexpr ma_uint32 kRing=19200;     // 400 ms of room
     static constexpr ma_uint32 kPrime=960;      // start playing with 20 ms queued
     static constexpr ma_uint32 kHighWater=4800; // above 100 ms, drop back to the target
     ma_device capture_{},playback_{};
@@ -55,7 +55,8 @@ class Engine {
         ma_uint32 available=ma_pcm_rb_available_read(&self.ring_);
         if(!self.primed_){if(available<kPrime+frames)return;self.primed_=true;}
         // The microphone clock ran ahead of the output: skip to the target instead of growing delay.
-        if(available>kHighWater){ma_pcm_rb_seek_read(&self.ring_,available-kPrime-frames);available=kPrime+frames;}
+        // Measured beyond this callback's own request, so a large request can never underflow the skip.
+        if(available>kHighWater+frames){ma_pcm_rb_seek_read(&self.ring_,available-kPrime-frames);available=kPrime+frames;}
         if(available<frames)self.primed_=false; // ran dry: play what is left, then queue up again
         ma_uint32 left=available<frames?available:frames;
         while(left){

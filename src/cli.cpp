@@ -17,10 +17,19 @@ volatile std::sig_atomic_t interrupted=0;
 void onSignal(int){interrupted=1;}
 
 struct Microphone {ma_device_id id;std::string name;bool isDefault;};
-std::vector<Microphone> microphones(ma_context& context){
+// `previousDefault` names the microphone that was the system default before MicFilter's own
+// virtual microphone took that role (Linux), so the list can still point it out.
+std::vector<Microphone> microphones(ma_context& context,const std::string& previousDefault={}){
     std::vector<Microphone> result;ma_device_info* capture=nullptr;ma_uint32 count=0;
     if(ma_context_get_devices(&context,nullptr,nullptr,&capture,&count)!=MA_SUCCESS)return result;
-    for(ma_uint32 i=0;i<count;++i)if(!ownOrLoopback(capture[i]))result.push_back({capture[i].id,capture[i].name,capture[i].isDefault!=0});
+    for(ma_uint32 i=0;i<count;++i){
+        if(ownOrLoopback(capture[i]))continue;
+        bool isDefault=capture[i].isDefault!=0;
+#if !defined(__APPLE__)
+        if(!previousDefault.empty())isDefault=previousDefault==capture[i].id.pulse;
+#endif
+        result.push_back({capture[i].id,capture[i].name,isDefault});
+    }
     return result;
 }
 const char* voiceName(unsigned preset){static const char* names[]={"Natural","Clear","Broadcast","Deep"};return names[preset<4?preset:0];}
@@ -96,6 +105,8 @@ Outcome session(Engine& engine,Config& config,const Microphone& microphone,const
 #endif
             std::fflush(stdout);
         }
+        // Without a terminal (piped or closed input) there are no keys to read: only signals stop it.
+        if(!raw.active()){usleep(200000);continue;}
         switch(readKey(66)){
         case Key::Quit:return Outcome::Quit;
         case Key::Microphone:return Outcome::ChangeMicrophone;
@@ -208,6 +219,7 @@ int main(int argc,char** argv){
     if(!list)reopenInTerminal();
 #endif
     std::signal(SIGINT,onSignal);std::signal(SIGTERM,onSignal);std::signal(SIGHUP,onSignal);
+    std::signal(SIGPIPE,SIG_IGN); // a closed window must still reach the cleanup below
     if(!list)banner(micfilter::kVersionText);
 
     ma_context context;auto contextConfig=ma_context_config_init();contextConfig.pulse.pApplicationName="MicFilter";
@@ -235,7 +247,7 @@ int main(int argc,char** argv){
     auto config=loadConfig();auto engine=std::make_unique<Engine>();int result=0;
     engine->voice=config.voice;engine->silencePermille=config.silencePermille;engine->wetPermille=config.wetPermille;
     for(bool first=true;!interrupted;first=false){
-        const auto found=microphones(context);
+        const auto found=microphones(context,virtualMic.previousDefault);
         if(found.empty()){fail("No microphone found. Connect one and open MicFilter again.");result=1;break;}
         size_t preselected=0;
         for(size_t i=0;i<found.size();++i)if(found[i].isDefault)preselected=i;
