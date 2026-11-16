@@ -1,12 +1,12 @@
 #pragma once
-#include "shared.h"
+#include "settings.h"
 #include "voice.h"
 #include <array>
 #include <rnnoise.h>
 
 namespace micfilter {
 // The model and rnnoise_process_frame are unchanged from Werman's v1.21.
-// This streaming adapter accepts arbitrary Windows callback sizes using fixed buffers.
+// This streaming adapter accepts arbitrary callback sizes using fixed buffers. Portable code.
 // Default gate values match v1.21 (85%, 200 ms, zero retroactive grace, 100% wet).
 // Unlike v1.21, the gate fades instead of switching at block edges, and around speech the
 // original signal is kept at -20 dB so word endings never fall into digital silence.

@@ -1,4 +1,5 @@
 #include <initguid.h>
+#include "shared.h"
 #include "rate_processor.h"
 #include "apo_sdk.h"
 #include <cstring>
@@ -139,7 +140,7 @@ public:
         p->clsid=micfilter::kClsid;p->Flags=static_cast<APO_FLAG>(APO_FLAG_DEFAULT|APO_FLAG_INPLACE);
         wcscpy_s(p->szFriendlyName,L"MicFilter - RNNoise v1.21");
         wcscpy_s(p->szCopyrightInfo,L"GPL-3.0; RNNoise: Xiph.Org BSD-3-Clause");
-        p->u32MajorVersion=0;p->u32MinorVersion=6;
+        p->u32MajorVersion=0;p->u32MinorVersion=7;
         p->u32MinInputConnections=p->u32MaxInputConnections=1;
         p->u32MinOutputConnections=p->u32MaxOutputConnections=1;
         p->u32MaxInstances=UINT32_MAX;p->u32NumAPOInterfaces=interfaceCount;

@@ -17,9 +17,24 @@ The tray is a controller. Windows loads the DLL in its audio host when a capture
 
 The engine supports the Windows float32 processing format, 1–8 channels and 8–192 kHz. RNNoise always receives 480-sample frames at 48 kHz. Windows callback sizes can vary. Resamplers, network state, queues and scratch buffers are initialized before processing; the callback uses fixed storage and interlocked telemetry.
 
+## Linux and macOS
+
+```mermaid
+flowchart LR
+  M[Chosen microphone] --> C[Capture, 48 kHz mono]
+  C --> N[Same engine: RNNoise and voice sound]
+  N --> Q[Lock-free ring]
+  Q --> P[Playback into the virtual device]
+  P --> A[Apps choose the virtual microphone]
+```
+
+These systems have no per-microphone effect slot like the Windows APO, so MicFilter runs as a terminal app (`src/cli.cpp`) and filtering lasts while its window is open. miniaudio opens the chosen microphone and a playback stream; `src/cli_engine.h` runs `RateProcessor` in the capture callback and hands the result to the playback callback through a fixed ring. The two devices have independent clocks: playback starts once 20 ms is queued, and if the queue grows past 100 ms it skips back to that target instead of accumulating delay. Nothing in either callback allocates, locks or touches files.
+
+On Linux, `src/cli_virtual_mic.h` asks the PipeWire/PulseAudio server (through `pactl`) for a null sink `micfilter_sink` and a remapped source `micfilter_mic` shown as "MicFilter-Microphone", makes that source the default, and on exit restores the previous default and unloads exactly the modules it loaded. Leftovers from a killed run are removed at the next start. On macOS the filtered voice is played into an installed BlackHole device, which apps select as their microphone; MicFilter never installs or changes a driver. Choices are stored as text in `~/.config/micfilter/config` or `~/Library/Application Support/MicFilter/config`. `micfilter --install` only copies the binary to `~/.local/bin` and writes a menu entry under `~/.local/share/applications`.
+
 ## Processing details
 
-RNNoise output is 20 ms behind its input (overlap/add plus one delayed frame); with the 10 ms frame buffer the filtered path is 1440 samples late at 48 kHz. The original (dry) signal uses the same delay so partial mixes do not comb-filter. The optional voice gate fades in over 5 ms and out over 50 ms. Around speech a -20 dB share of the original signal (`kFloorGain` in `src/dsp.h`) is mixed in so word tails never drop into digital silence. It is held while RNNoise's voice probability reaches 0.6 and for 300 ms after, then fades out over 400 ms, so pauses get RNNoise's full noise reduction. The floor only adds the original signal; the voice itself always comes from RNNoise, so its fade cannot cut a word. Reported APO latency is 30 ms plus any resampler delay.
+The engine treats denormal floats as zero while it processes and restores the caller's floating-point mode on return (`DenormalGuard` in `src/platform.h`), so silence cannot slow the filters down. RNNoise output is 20 ms behind its input (overlap/add plus one delayed frame); with the 10 ms frame buffer the filtered path is 1440 samples late at 48 kHz. The original (dry) signal uses the same delay so partial mixes do not comb-filter. The optional voice gate fades in over 5 ms and out over 50 ms. Around speech a -20 dB share of the original signal (`kFloorGain` in `src/dsp.h`) is mixed in so word tails never drop into digital silence. It is held while RNNoise's voice probability reaches 0.6 and for 300 ms after, then fades out over 400 ms, so pauses get RNNoise's full noise reduction. The floor only adds the original signal; the voice itself always comes from RNNoise, so its fade cannot cut a word. Reported APO latency is 30 ms plus any resampler delay.
 
 Voice presets (`src/voice.cpp`) run after the mix at 48 kHz. Natural leaves samples untouched. Clear uses a 65 Hz high-pass, a modest 280 Hz cut, restrained 3 kHz presence and a 0.5 dB air shelf. Broadcast uses a 60 Hz high-pass, slight warmth, low-mid cleanup and restrained presence; its linked compressor uses 2:1 above -20 dBFS and +3 dB makeup. Deep uses a 40 Hz high-pass to retain low fundamentals, a +1.2 dB low shelf, a 250 Hz cut and modest 2.2 kHz presence; compression is 1.6:1 above -18 dBFS with +1.5 dB makeup. Both compressors use a 6 dB soft knee, 12 ms attack and 200 ms release. All polished presets end in a soft limiter. Changes fade out and in over 10 ms each. No pitch shifting is performed.
 
@@ -85,6 +100,7 @@ The producer ID and recent monotonic tick distinguish current callbacks from old
 
 - Werman v1.21: `4b0a6f76fc8bcfb5a3603ae2cb6619dfcb0e19f2`.
 - Bundled RNNoise: `70f1d256acd4b34a572f999a05c87bf00b67730d`.
+- miniaudio 0.11.26 (`vendor/miniaudio`), used only by the Linux/macOS terminal app.
 - SpeexDSP 1.2.1: `1b28a0f61bc31162979e1f26f3981fc3637095c8`, standalone float resampler with `RANDOM_PREFIX=micfilter`.
 - APO interface declarations are written for this project in `src/apo_sdk.h` from Microsoft's public API reference; no Windows SDK headers are redistributed. Compile-time checks pin the struct layouts.
 - `vendor/rnnoise` is the unmodified inference subset of RNNoise at the revision above; `vendor/rnnoise/SOURCE.md` lists what is kept. Training scripts, build-system files and the unused alternative model `rnnoise_data_little.c` are omitted.

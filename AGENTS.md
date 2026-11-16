@@ -5,8 +5,10 @@
 MicFilter is a small native Windows app that removes background noise from
 microphones. It installs a Windows audio effect (APO) running RNNoise on the
 microphones the user picks, so apps receive cleaner audio. A tray icon controls
-it, and a single-file installer sets it up. It is generic: it works with any
-microphone brand and must not favor or detect specific brands.
+it, and a single-file installer sets it up. On Linux and macOS the same engine
+runs in a terminal app that feeds a virtual microphone while its window is open.
+It is generic: it works with any microphone brand and must not favor or detect
+specific brands.
 
 ## Intentions
 
@@ -38,7 +40,8 @@ These are the qualities every change should protect:
 
 The application lives in src/. The installer logic is in the PowerShell scripts
 at the root (setup-install.ps1, install.ps1, installer-registry.ps1); build.ps1
-and package.ps1 compile and bundle everything.
+and package.ps1 compile and bundle everything. The Linux/macOS terminal app is
+the src/cli* files, built by build.sh.
 
 ## Keep context small
 

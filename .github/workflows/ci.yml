@@ -1,0 +1,60 @@
+name: CI
+
+# One short run per pull request. Kept deliberately small:
+# - documentation-only changes do not start it;
+# - a new push to the same pull request cancels the run in progress;
+# - three jobs only (one per system), each with a hard time limit;
+# - the Windows compiler (190 MB) is cached instead of downloaded every time.
+on:
+  pull_request:
+    paths-ignore:
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - 'CONTRIBUTING.md'
+      - 'LICENSE'
+      - 'docs/**'
+      - 'assets/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  posix:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Linux, os: ubuntu-22.04 }
+          - { name: macOS, os: macos-latest }
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build, test and package
+        run: ./build.sh --test --package
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Restore the pinned compiler
+        uses: actions/cache@v6
+        with:
+          path: tools/llvm-mingw-*-ucrt-x86_64
+          key: llvm-mingw-${{ hashFiles('compiler-source.json') }}
+      - name: Build, test and package
+        shell: pwsh
+        run: |
+          .\bootstrap-toolchain.ps1
+          .\build.ps1 -RunTests
+          .\package.ps1 -RunTests
+          exit 0

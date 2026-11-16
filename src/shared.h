@@ -3,6 +3,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "settings.h"
 #include <algorithm>
 #include <string>
 
@@ -108,13 +109,6 @@ public:
 };
 struct StateMapping : FileMapping<SharedState,kMagic,kStateVersion> { StateMapping() : FileMapping(L"state.bin") {} };
 struct OptionsMapping : FileMapping<Options,kOptionsMagic,kOptionsVersion> { OptionsMapping() : FileMapping(L"options.bin") {} };
-struct Settings {
-    bool enabled=false;
-    float threshold=0.85f;
-    unsigned grace=20;
-    float wet=1.0f;
-    unsigned voice=0;
-};
 // A missing options file means the Natural voice preset.
 inline Settings snapshot(SharedState* p, Options* options=nullptr) noexcept {
     if (!p || p->magic!=kMagic || p->version!=kStateVersion) return {};

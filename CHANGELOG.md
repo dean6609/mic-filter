@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — 2026-11-15
+
+- **Linux and macOS.** A new terminal app runs the same noise reduction and voice sounds: open it, choose your microphone with the arrow keys and keep the window open. Linux (PipeWire or PulseAudio) creates a virtual "MicFilter-Microphone", makes it the system default and puts the previous default back on exit. macOS (Apple silicon) sends the clean sound to the free BlackHole driver, which you choose as the microphone in your apps. Live level meters show the microphone and the cleaned voice; single keys switch noise reduction, voice sound, silence between words and original sound. Choices are remembered. `micfilter --install` adds a menu entry on Linux without administrator rights. These builds compile and pass the engine tests on every pull request, but have not yet been checked on physical Linux or macOS microphones.
+- Fix a possible slowdown during silence: filter and network values that decay towards zero ("denormal" numbers) could make each audio operation many times slower. The engine now treats them as zero while it processes and restores the audio host's floating-point mode afterwards.
+- A failed engine start can no longer leave it half-initialized.
+- The processing engine (`dsp`, `voice`, `rate_processor`) no longer depends on Windows headers, so the same code and tests run on Windows, Linux and macOS.
+- Setup shows a framed title, matching the terminal app.
+- Every pull request is built and tested on Windows, Linux and macOS by a short automated workflow. Publishing a release attaches the Linux and macOS downloads automatically; the Windows installer is still checked on a real microphone first.
+
 ## 0.6.0 — 2026-10-08
 
 - Fix legacy-only registration being ignored on modern capture endpoints, including Bluetooth hands-free inputs. Setup uses a mode-aware stream effect on modern graphs, migrates existing associations safely and restores original stream properties and types on rollback/removal. The tray recognizes both routes; targeted restart now includes a uniquely matching Bluetooth hands-free function.

@@ -3,13 +3,15 @@
 <img src="assets/readme-banner.svg" alt="MicFilter — less background noise in calls and recordings" width="100%">
 
 [![Download for Windows](https://img.shields.io/badge/Download-Windows_x64-14b8a6?style=for-the-badge&logo=windows)](https://github.com/dean6609/mic-filter/releases/latest/download/MicFilter-Setup.exe)
+[![Download for Linux](https://img.shields.io/badge/Download-Linux_x64-14b8a6?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/dean6609/mic-filter/releases/latest/download/MicFilter-Linux-x86_64.tar.gz)
+[![Download for macOS](https://img.shields.io/badge/Download-macOS_Apple_silicon-14b8a6?style=for-the-badge&logo=apple)](https://github.com/dean6609/mic-filter/releases/latest/download/MicFilter-macOS-arm64.zip)
 [![Latest release](https://img.shields.io/github/v/release/dean6609/mic-filter?style=for-the-badge&color=334155)](https://github.com/dean6609/mic-filter/releases/latest)
 
 **Your voice, without the background noise.**<br>
 MicFilter cleans up your microphone for your calls and recordings.<br>
 It runs on your PC, works offline and never saves your voice.
 
-[How it works](#how-it-works) · [Install](#install) · [Controls](#everyday-controls) · [Contributing](CONTRIBUTING.md)
+[How it works](#how-it-works) · [Windows](#install-on-windows) · [Linux and macOS](#linux-and-macos) · [Controls](#everyday-controls-on-windows) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
@@ -17,12 +19,16 @@ It runs on your PC, works offline and never saves your voice.
 
 <img src="docs/images/how-it-works.svg" alt="Your microphone picks up your voice and noise; MicFilter removes the noise on your PC; your apps receive just your voice." width="100%">
 
-MicFilter installs as a Windows audio effect on the microphones you choose.
-Apps that use those microphones get the cleaned sound automatically — there is
-nothing to set up inside each app. Your choice stays saved after restarting
-Windows.
+On **Windows**, MicFilter installs as an audio effect on the microphones you
+choose. Apps that use those microphones get the cleaned sound automatically —
+there is nothing to set up inside each app. Your choice stays saved after
+restarting Windows.
 
-## Install
+On **Linux and macOS**, MicFilter is a small terminal app: open it, choose your
+microphone, and your apps get the cleaned sound from a virtual microphone while
+the window stays open.
+
+## Install on Windows
 
 1. **[Download MicFilter-Setup.exe](https://github.com/dean6609/mic-filter/releases/latest/download/MicFilter-Setup.exe)**, open it and accept the administrator prompt.
 2. **Pick your microphones.** With just one, setup continues on its own. With
@@ -37,7 +43,33 @@ it again any time you want to add another microphone.
 > warning. Choose **More info → Run anyway**. You never need to turn off Windows
 > security.
 
-## Everyday controls
+## Linux and macOS
+
+> [!NOTE]
+> New in 0.7 and still experimental: these builds pass the automated tests but
+> have not been checked on physical microphones yet. Reports are welcome.
+
+**Linux (x86_64, PipeWire or PulseAudio)**
+
+1. **[Download MicFilter-Linux-x86_64.tar.gz](https://github.com/dean6609/mic-filter/releases/latest/download/MicFilter-Linux-x86_64.tar.gz)** and extract it.
+2. **Double-click `micfilter`** (choose *Run* if asked) or run `./micfilter` in a terminal.
+3. **Choose your microphone** with the arrow keys and press Enter. MicFilter
+   creates "MicFilter-Microphone" and makes it the default, so most apps use it
+   right away. Closing MicFilter puts everything back.
+
+**macOS (Apple silicon)**
+
+1. Install the free [BlackHole 2ch](https://existential.audio/blackhole/) audio
+   driver once (`brew install blackhole-2ch`).
+2. **[Download MicFilter-macOS-arm64.zip](https://github.com/dean6609/mic-filter/releases/latest/download/MicFilter-macOS-arm64.zip)**, extract it and double-click **MicFilter.command**.
+3. **Choose your microphone**, then pick **BlackHole 2ch** as the microphone in
+   your apps.
+
+While it runs: **space** turns noise reduction off or on, **v** changes the voice
+sound, **s** the silence between words, **o** the original sound, **m** the
+microphone and **q** quits. Your choices are remembered.
+
+## Everyday controls on Windows
 
 The microphone icon next to the clock starts with Windows. **Click it** to turn
 noise reduction off or on. **Right-click it** for everything else:
@@ -57,7 +89,7 @@ settings. Settings apply to every microphone you installed MicFilter on.
 
 ## Good to know
 
-- **Windows x64 (Intel/AMD).** USB and Bluetooth microphones can work;
+- **Windows x64 (Intel/AMD), Linux x86_64, macOS on Apple silicon.** On Windows, USB and Bluetooth microphones can work;
   compatibility depends on the driver. See [device details](docs/validation.md).
 - **Other audio effects can conflict.** Setup keeps them and tells you when a
   microphone is unavailable. Apps that use RAW or exclusive capture skip
@@ -69,8 +101,9 @@ settings. Settings apply to every microphone you installed MicFilter on.
 
 ## Build it yourself
 
-Everything builds on your own computer with a portable compiler — no special
-access or cloud service required. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+Everything builds on your own computer — a portable compiler on Windows, the
+system compiler on Linux and macOS — with no special access or cloud service
+required. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
 commands, the [architecture](docs/architecture.md) for how it works, and the
 [changelog](CHANGELOG.md) for release history. Coding assistants should start
 with [AGENTS.md](AGENTS.md).
@@ -78,4 +111,5 @@ with [AGENTS.md](AGENTS.md).
 ## License
 
 [GPL-3.0](LICENSE). Built with [RNNoise](https://github.com/xiph/rnnoise) and the
-SpeexDSP resampler, which keep their own BSD license notices.
+SpeexDSP resampler, which keep their own BSD license notices, and
+[miniaudio](https://miniaud.io) (public domain / MIT-0) on Linux and macOS.

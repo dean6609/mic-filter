@@ -12,6 +12,12 @@ The tray's real window procedure is tested against private controls: reopening p
 
 `tests/multi-device-tests.ps1` executes the installer against private HKCU keys and temporary files, substituting only elevation, process and hardware/shortcut boundaries. It checks legacy-backup migration, idempotent installation on two inputs, saved disabled/Deep settings, modern SFX versus legacy LFX selection, migration from an existing LFX-only backup, typed restoration of previous streaming modes, protection against concurrent foreign SFX changes, successful updates and capture-failure rollback while another process holds read/write handles on both settings files, conflict preservation, capture-failure rollback of a selected batch, individual removal and full uninstall. APO tests initialize two synthetic endpoint property stores and verify that each input's processing increments only its own telemetry. DSP checks include low-fundamental retention and mud/treble control for Deep, restrained Clear brightness, compression, limiting, all eight linked channels and switching all four presets.
 
+## Linux and macOS
+
+`build.sh --test` runs the same portable DSP and resampling checks (`tests/dsp_tests.cpp`) plus `micfilter --self-test`: saved choices, a damaged settings file, the mono engine and the audio ring, without opening a microphone. The pull-request workflow runs this on Linux x86_64 and macOS arm64, and the full Windows checks on Windows.
+
+The terminal app has **not** been checked with a physical microphone on Linux or macOS. Creating the virtual microphone, capture, the level meters, BlackHole routing and listening quality all need a physical check on each system before compatibility is claimed. ARM builds use RNNoise's portable C path because the vendored subset has no NEON kernels.
+
 ## Physical checks
 
 Installation and voice capture have been checked with a Wavo POD on Windows x64. This is test hardware, not a brand restriction. More devices need physical checks before specific driver compatibility can be claimed.

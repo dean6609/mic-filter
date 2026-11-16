@@ -41,6 +41,7 @@ try{
 $manifest=Get-Content -LiteralPath (Join-Path $testRoot 'src\setup.manifest') -Raw
 if($manifest -notmatch ('version="'+[regex]::Escape($micFilterVersion)+'\.0"')){throw 'setup.manifest version differs from installer-registry.ps1.'}
 if((Select-String -LiteralPath (Join-Path $testRoot 'src\setup.cpp') -Pattern ('kVersion\[\]=L"'+[regex]::Escape($micFilterVersion)+'"') -AllMatches).Matches.Count -ne 1){throw 'setup.cpp kVersion differs from installer-registry.ps1.'}
+if((Select-String -LiteralPath (Join-Path $testRoot 'src\version.h') -Pattern ('kVersionText\[\]="'+[regex]::Escape($micFilterVersion)+'"') -AllMatches).Matches.Count -ne 1){throw 'version.h differs from installer-registry.ps1.'}
 if((Get-Content -LiteralPath (Join-Path $testRoot 'GETTING_STARTED.txt') -TotalCount 1) -notmatch ('^MicFilter '+[regex]::Escape($micFilterVersion)+' ')){throw 'GETTING_STARTED.txt version differs.'}
 if((Select-String -LiteralPath (Join-Path $testRoot 'CHANGELOG.md') -Pattern '^## (\S+)' | Select-Object -First 1).Matches[0].Groups[1].Value -ne $micFilterVersion){throw 'CHANGELOG.md does not start with this version.'}
 $hashed=Join-Path $DistributionDirectory 'install.ps1'

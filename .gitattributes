@@ -1,2 +1,5 @@
 # Unmodified third-party code; keep it out of GitHub language statistics.
 vendor/** linguist-vendored
+# Scripts run by Linux/macOS shells must keep Unix line endings on every checkout.
+*.sh text eol=lf
+*.command text eol=lf
